@@ -13,6 +13,7 @@
 #define NUM_READSTAT_HANDLES    4
 
 CRITICAL_SECTION gStatusCritical;
+CRITICAL_SECTION gcsWriterHeap;
 CRITICAL_SECTION gcsDataHeap;
 
 HANDLE ghWriterHeap = NULL;
@@ -242,15 +243,14 @@ DWORD WINAPI WriterProc( LPVOID lpVoid )
 						break;
 
 					case WRITE_CHAR:
-						WriterChar( pWrite );
+						pApp->WriterGeneric( &(pWrite->ch), 1 );
 						break;
 
 					case WRITE_FILESTART:
-						WriterFileStart( pWrite->dwSize );
 						break;
 
 					case WRITE_FILE:
-						WriterFile( pWrite );
+						pApp->WriterGeneric( pWrite->lpBuf, pWrite->dwSize );
 
 						EnterCriticalSection( &gcsDataHeap );
 						fRes = HeapFree( pWrite->hHeap, 0, pWrite->lpBuf );
@@ -261,20 +261,53 @@ DWORD WINAPI WriterProc( LPVOID lpVoid )
 						break;
 
 					case WRITE_FILEEND:
-						WriterComplete();
+						if ( !SetEvent(ghTransferCompleteEvent) )
+							OutputDebugString("SetEvent (transfer complete event)\r\n");
 						break;
 
 					case WRITE_ABORT:
-						WriterAbort( pWrite );
+						{
+						    PWRITEREQUEST pCurrent;
+							PWRITEREQUEST pNextNode;
+							BOOL fRes;
+							int i = 0;
+							char szMessage[128];
+
+							EnterCriticalSection(&gcsWriterHeap);
+							pCurrent = pWrite->pNext;
+
+							while ( pCurrent != gpWriterTail )
+							{
+								pNextNode = pCurrent->pNext;
+								fRes = HeapFree(ghWriterHeap, 0, pCurrent);
+								if ( !fRes )
+									break;
+								i++;
+								pCurrent = pNextNode;
+							}
+
+							pWrite->pNext = gpWriterTail;
+							gpWriterTail->pPrev = pWrite;
+							LeaveCriticalSection(&gcsWriterHeap);
+
+							wsprintf(szMessage, "%d packets ignored.\n", i);
+							OutputDebugString(szMessage);
+
+							if ( !fRes )
+								OutputDebugString("HeapFree (Writer heap)\r\n");
+
+							if ( !SetEvent(ghTransferCompleteEvent) )
+								OutputDebugString("SetEvent (transfer complete event)\r\n");
+						}
 						break;
 
 					case WRITE_BLOCK:
-						WriterBlock( pWrite );
+						pApp->WriterGeneric( pWrite->lpBuf, pWrite->dwSize );
 						break;
 					}
 				}
 
-				pWrite = RemoveFromLinkedList( pWrite );
+				pWrite = pApp->RemoveFromLinkedList( pWrite );
 				pWrite = gpWriterHead->pNext;
 			}
 			break;
@@ -345,6 +378,7 @@ BOOL CSerialCommAppApp::InitInstance()
 	CWinApp::InitInstance();
 
     InitializeCriticalSection( &gStatusCritical );
+    InitializeCriticalSection( &gcsWriterHeap );
     InitializeCriticalSection( &gcsDataHeap );
 
     ghThreadExitEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -357,6 +391,7 @@ BOOL CSerialCommAppApp::InitInstance()
 int CSerialCommAppApp::ExitInstance()
 {
     DeleteCriticalSection( &gStatusCritical );
+    DeleteCriticalSection( &gcsWriterHeap );
     DeleteCriticalSection( &gcsDataHeap );
 
 	if ( ghThreadExitEvent != NULL )
@@ -586,6 +621,102 @@ DWORD CSerialCommAppApp::WaitForThreads(DWORD dwTimeout)
     return dwRes;
 }
 
+void CSerialCommAppApp::WriterGeneric(char* lpBuf, DWORD dwToWrite)
+{
+    OVERLAPPED osWrite = {0};
+    HANDLE hArray[2];
+    DWORD dwWritten;
+    DWORD dwRes;
+
+    if ( NOWRITING(m_SerialData.TTYInfo) )
+        return ;
+
+    osWrite.hEvent = CreateEvent( NULL, TRUE, FALSE, NULL );
+    if ( osWrite.hEvent == NULL )
+        OutputDebugString("CreateEvent (overlapped write hEvent)\r\n");
+
+    hArray[0] = osWrite.hEvent;
+    hArray[1] = ghThreadExitEvent;
+
+	if ( !WriteFile(COMDEV(m_SerialData.TTYInfo), lpBuf, dwToWrite, &dwWritten, &osWrite) )
+	{
+		if ( GetLastError() == ERROR_IO_PENDING )
+		{
+			dwRes = WaitForMultipleObjects( 2, hArray, FALSE, INFINITE );
+			switch ( dwRes )
+			{
+			default:
+				OutputDebugString("WaitForMultipleObjects (WriterGeneric)\r\n");
+				break;
+
+			case WAIT_OBJECT_0:
+				SetLastError( ERROR_SUCCESS );
+				if ( !GetOverlappedResult(COMDEV(m_SerialData.TTYInfo), &osWrite, &dwWritten, FALSE) )
+				{
+					if ( GetLastError() == ERROR_OPERATION_ABORTED )
+						OutputDebugString("書き込みが中止されました\r\n");
+					else
+						OutputDebugString("GetOverlappedResult(in Writer)");
+
+					if ( dwWritten != dwToWrite )
+					{
+						if ( (GetLastError() == ERROR_SUCCESS) && SHOWTIMEOUTS(m_SerialData.TTYInfo) )
+							OutputDebugString("書き込みがタイムアウトしました。(overlapped)\r\n");
+						else
+							OutputDebugString("ポートへのデータの書き込み中にエラーが発生しました。(overlapped)");
+					}
+				}
+				break;
+
+			case WAIT_OBJECT_0 + 1:
+				break;
+
+			case WAIT_TIMEOUT:
+				OutputDebugString("WriterGenericでタイムアウトを待ちます。\r\n");
+				break;
+
+			case WAIT_FAILED:
+				break;
+			}
+		}
+		else
+		{
+			OutputDebugString("WriteFile (in Writer)\r\n");
+		}
+	}
+	else
+	{
+		if ( dwWritten != dwToWrite )
+			OutputDebugString("書き込みがタイムアウトしました。(immediate)\r\n");
+	}
+
+	CloseHandle( osWrite.hEvent );
+}
+
+PWRITEREQUEST CSerialCommAppApp::RemoveFromLinkedList(PWRITEREQUEST pNode)
+{
+    PWRITEREQUEST pNextNode;
+    PWRITEREQUEST pPrevNode;
+    BOOL bRes;
+
+    EnterCriticalSection(&gcsWriterHeap);
+    
+    pNextNode = pNode->pNext;
+    pPrevNode = pNode->pPrev;    
+    
+    bRes = HeapFree(ghWriterHeap, 0, pNode);
+    
+    pPrevNode->pNext = pNextNode;
+    pNextNode->pPrev = pPrevNode;
+
+    LeaveCriticalSection(&gcsWriterHeap);
+
+    if (!bRes)
+        OutputDebugString("HeapFree(write request)\r\n");
+
+    return pNextNode;     // return the freed node's pNext (maybe the tail)
+}
+
 
 SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, T_SERIAL_DATA* pSerialData )
 {
@@ -618,5 +749,3 @@ SERIALCOMM_API void WINAPI serialCloseComm( HANDLE hSerial )
 
 	pApp->BreakDownCommPort();
 }
-
-

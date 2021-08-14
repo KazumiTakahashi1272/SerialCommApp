@@ -39,4 +39,6 @@ public:
 	BOOL UpdateConnection(void);
 	void StartThreads(void);
 	virtual int ExitInstance();
+	void WriterGeneric(char* lpBuf, DWORD dwToWrite);
+	PWRITEREQUEST RemoveFromLinkedList(PWRITEREQUEST pNode);
 };
