@@ -1,0 +1,6 @@
+; SerialCommApp.def : DLL のモジュール パラメータを宣言します。
+
+LIBRARY      "SerialComm"
+
+EXPORTS
+    ; 明示的なエクスポートはここへ記述できます
