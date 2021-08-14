@@ -12,9 +12,15 @@
 #define AMOUNT_TO_READ          512
 #define NUM_READSTAT_HANDLES    4
 
+CRITICAL_SECTION gStatusCritical;
+CRITICAL_SECTION gcsDataHeap;
+
 HANDLE ghWriterHeap = NULL;
 HANDLE ghWriterEvent = NULL;
 HANDLE ghTransferCompleteEvent = NULL;
+COMMTIMEOUTS gTimeoutsDefault = { 0x01, 0, 0, 0, 0 };
+DWORD  gdwReceiveState = NULL;
+HANDLE ghThreadExitEvent = NULL;
 
 DWORD WINAPI ReaderProc( LPVOID lpVoid )
 {
@@ -185,6 +191,8 @@ DWORD WINAPI WriterProc( LPVOID lpVoid )
     DWORD dwSize;
     BOOL fDone = FALSE;
 
+	CSerialCommAppApp *pApp = (CSerialCommAppApp*)lpVoid;
+
     GetSystemInfo(&sysInfo);
     ghWriterHeap = HeapCreate( 0, sysInfo.dwPageSize*2, sysInfo.dwPageSize*4 );
     if (ghWriterHeap == NULL)
@@ -198,7 +206,89 @@ DWORD WINAPI WriterProc( LPVOID lpVoid )
     if ( ghTransferCompleteEvent == NULL )
         OutputDebugString("CreateEvent(transfer complete event)\r\n");
 
+    dwSize = sizeof(WRITEREQUEST);
+    gpWriterHead = (WRITEREQUEST*)HeapAlloc(ghWriterHeap, HEAP_ZERO_MEMORY, dwSize);
+    gpWriterTail = (WRITEREQUEST*)HeapAlloc(ghWriterHeap, HEAP_ZERO_MEMORY, dwSize);
+    gpWriterHead->pNext = gpWriterTail;
+    gpWriterTail->pPrev = gpWriterHead;
 
+    hArray[0] = ghWriterEvent;
+    hArray[1] = ghThreadExitEvent;
+
+    while ( !fDone )
+	{
+        dwRes = WaitForMultipleObjects( 2, hArray, FALSE, WRITE_CHECK_TIMEOUT );
+        switch ( dwRes )
+        {
+		case WAIT_TIMEOUT:
+			break;
+
+		case WAIT_FAILED:
+			OutputDebugString("WaitForMultipleObjects( writer proc )\r\n");
+			break;
+
+		case WAIT_OBJECT_0:
+			{
+			    PWRITEREQUEST pWrite;
+			    BOOL fRes;
+
+				pWrite = gpWriterHead->pNext;
+				while ( pWrite != gpWriterTail )
+				{
+					switch ( pWrite->dwWriteType )
+					{
+					default:
+						OutputDebugString("不正な書き込みリクエスト\r\n");
+						break;
+
+					case WRITE_CHAR:
+						WriterChar( pWrite );
+						break;
+
+					case WRITE_FILESTART:
+						WriterFileStart( pWrite->dwSize );
+						break;
+
+					case WRITE_FILE:
+						WriterFile( pWrite );
+
+						EnterCriticalSection( &gcsDataHeap );
+						fRes = HeapFree( pWrite->hHeap, 0, pWrite->lpBuf );
+						LeaveCriticalSection( &gcsDataHeap );
+
+						if ( !fRes )
+							OutputDebugString("HeapFree(file transfer buffer)\r\n");
+						break;
+
+					case WRITE_FILEEND:
+						WriterComplete();
+						break;
+
+					case WRITE_ABORT:
+						WriterAbort( pWrite );
+						break;
+
+					case WRITE_BLOCK:
+						WriterBlock( pWrite );
+						break;
+					}
+				}
+
+				pWrite = RemoveFromLinkedList( pWrite );
+				pWrite = gpWriterHead->pNext;
+			}
+			break;
+
+		case WAIT_OBJECT_0 + 1:
+			fDone = TRUE;
+			break;
+        }
+    }
+
+    CloseHandle( ghTransferCompleteEvent );
+    CloseHandle( ghWriterEvent );
+
+	HeapDestroy(ghWriterHeap );
 
 	return 1;
 }
@@ -248,9 +338,6 @@ CSerialCommAppApp::CSerialCommAppApp()
 
 CSerialCommAppApp theApp;
 
-COMMTIMEOUTS gTimeoutsDefault = { 0x01, 0, 0, 0, 0 };
-DWORD  gdwReceiveState = NULL;
-
 // CSerialCommAppApp 初期化
 
 BOOL CSerialCommAppApp::InitInstance()
@@ -258,6 +345,11 @@ BOOL CSerialCommAppApp::InitInstance()
 	CWinApp::InitInstance();
 
     InitializeCriticalSection( &gStatusCritical );
+    InitializeCriticalSection( &gcsDataHeap );
+
+    ghThreadExitEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    if (ghThreadExitEvent == NULL)
+        OutputDebugString("CreateEvent (Thread exit event)\r\n");        
 
 	return TRUE;
 }
@@ -265,6 +357,10 @@ BOOL CSerialCommAppApp::InitInstance()
 int CSerialCommAppApp::ExitInstance()
 {
     DeleteCriticalSection( &gStatusCritical );
+    DeleteCriticalSection( &gcsDataHeap );
+
+	if ( ghThreadExitEvent != NULL )
+	    CloseHandle( ghThreadExitEvent );
 
 	return CWinApp::ExitInstance();
 }

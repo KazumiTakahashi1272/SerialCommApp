@@ -201,6 +201,22 @@ typedef struct _SERIAL_DATA
 	LPFNRECEPTION	lpfnReception;
 } T_SERIAL_DATA;
 
+typedef struct WRITEREQUEST
+{
+	DWORD      dwWriteType;        // char, file start, file abort, file packet
+	DWORD      dwSize;             // size of buffer
+	char       ch;                 // ch to send
+	char *     lpBuf;              // address of buffer to send
+	HANDLE     hHeap;              // heap containing buffer
+	HWND       hWndProgress;       // status bar window handle
+	struct WRITEREQUEST *pNext;    // next node in the list
+	struct WRITEREQUEST *pPrev;    // prev node in the list
+} WRITEREQUEST, *PWRITEREQUEST;
+
+struct WRITEREQUEST *gpWriterHead;
+struct WRITEREQUEST *gpWriterTail;
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -10,8 +10,6 @@
 #include "resource.h"		// ÉÅÉCÉì ÉVÉìÉ{Éã
 #include "SerialComm.h"
 
-CRITICAL_SECTION gStatusCritical;
-
 DWORD WINAPI ReaderProc( LPVOID lpVoid );
 DWORD WINAPI WriterProc( LPVOID lpVoid );
 
