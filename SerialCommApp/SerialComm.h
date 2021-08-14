@@ -20,6 +20,17 @@ using namespace std;
 #endif
 
 //
+//
+//
+typedef void (CALLBACK* LPFNRECEPTION)(char* lpData, DWORD dwBufLen);
+
+//
+//
+//
+#define TTY_COMM_INIT	0	// TTY通信構造体の初期化
+#define TTY_COMM_SET	1	// TTY通信構造体の設定
+
+//
 // hard coded maximum number of ports
 //
 #define MAXPORTS        10
@@ -46,17 +57,51 @@ using namespace std;
 #define ASCII_XON       0x11
 #define ASCII_XOFF      0x13
 
-//----------------------------------------------------------------------------
-// 通信パラメータ
-//----------------------------------------------------------------------------
-typedef struct _SERIAL_DATA
-{
-} T_SERIAL_DATA;
+//
+// GLOBAL DEFINES
+//
+#define TTY_BUFFER_SIZE         MAXROWS * MAXCOLS
+#define MAX_STATUS_BUFFER       20000
+#define MAX_WRITE_BUFFER        1024
+#define MAX_READ_BUFFER         2048
+#define READ_TIMEOUT            500
+#define STATUS_CHECK_TIMEOUT    500
+#define WRITE_CHECK_TIMEOUT     500
+#define PURGE_FLAGS             PURGE_TXABORT | PURGE_TXCLEAR | PURGE_RXABORT | PURGE_RXCLEAR 
+#define EVENTFLAGS_DEFAULT      EV_BREAK | EV_CTS | EV_DSR | EV_ERR | EV_RING | EV_RLSD
+#define FLAGCHAR_DEFAULT        '\n'
 
 //
-// data 構造体
+// Write request types
 //
-struct TTYInfoStruct
+#define WRITE_CHAR          0x01
+#define WRITE_FILE          0x02
+#define WRITE_FILESTART     0x03
+#define WRITE_FILEEND       0x04
+#define WRITE_ABORT         0x05
+#define WRITE_BLOCK         0x06
+
+//
+// Read states
+//
+#define RECEIVE_TTY         0x01
+#define RECEIVE_CAPTURED    0x02
+
+//
+// window coords
+//
+#define MAXXWINDOW          820//750
+#define MAXYWINDOW          530
+#define STARTXWINDOW        80
+#define STARTYWINDOW        70
+
+#define SETTINGSFACTOR      5
+#define STATUSFACTOR        5
+
+//----------------------------------------------------------------------------
+// 通信 data 構造体
+//----------------------------------------------------------------------------
+typedef struct _TTYInfoStruct
 {
     HANDLE  hCommPort, hReaderStatus, hWriter ;
     DWORD   dwEventFlags;
@@ -83,12 +128,13 @@ struct TTYInfoStruct
     COMMTIMEOUTS timeoutsnew;
     int     xSize, ySize, xScroll, yScroll, xOffset, yOffset,
             nColumn, nRow, xChar, yChar , nCharPos;
+	LPVOID	lpfnCallBack;
 
-} TTYInfo;
+} TTYInfoStruct;
 
-//
-// macros ( for easier readability )
-//
+//----------------------------------------------------------------------------
+// 通信 macros
+//----------------------------------------------------------------------------
 #define COMDEV( x )         (x.hCommPort)
 #define CURSORSTATE( x )    (x.wCursorState)
 #define PORT( x )           (x.bPort)
@@ -125,6 +171,8 @@ struct TTYInfoStruct
 #define FLAGCHAR( x )       (x.chFlag)
 #define SCREENCHAR( x, col, row )   (x.Screen[row * MAXCOLS + col])
 
+#define LPFNCALLBACK( x )	(x.lpfnCallBack)
+
 #define DTRCONTROL( x )     (x.fDtrControl)
 #define RTSCONTROL( x )     (x.fRtsControl)
 #define XONCHAR( x )        (x.chXON)
@@ -144,12 +192,20 @@ struct TTYInfoStruct
 #define NOSTATUS( x )       (x.fNoStatus)
 #define SHOWTIMEOUTS( x )   (x.fDisplayTimeouts)
 
+//----------------------------------------------------------------------------
+// 通信パラメータ
+//----------------------------------------------------------------------------
+typedef struct _SERIAL_DATA
+{
+	TTYInfoStruct	TTYInfo;
+	LPFNRECEPTION	lpfnReception;
+} T_SERIAL_DATA;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-SERIALCOMM_API HANDLE WINAPI serialOpenComm( T_SERIAL_DATA* pCryptoData );
+SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, T_SERIAL_DATA* pSerialData );
 SERIALCOMM_API void WINAPI serialCloseComm( HANDLE hSerial );
 
 SERIALCOMM_API bool WINAPI serialWriteComm( HANDLE hSerial, string strData );

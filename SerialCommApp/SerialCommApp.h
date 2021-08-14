@@ -8,7 +8,12 @@
 #endif
 
 #include "resource.h"		// メイン シンボル
+#include "SerialComm.h"
 
+CRITICAL_SECTION gStatusCritical;
+
+DWORD WINAPI ReaderProc( LPVOID lpVoid );
+DWORD WINAPI WriterProc( LPVOID lpVoid );
 
 // CSerialCommAppApp
 // このクラスの実装に関しては SerialCommApp.cpp を参照してください。
@@ -22,6 +27,18 @@ public:
 // オーバーライド
 public:
 	virtual BOOL InitInstance();
+	BOOL InitTTYInfo( T_SERIAL_DATA* pSerialData );
 
 	DECLARE_MESSAGE_MAP()
+
+public:
+	T_SERIAL_DATA m_SerialData;
+	HANDLE m_hThreadExitEvent;
+
+	BOOL BreakDownCommPort(void);
+	DWORD WaitForThreads(DWORD dwTimeout);
+	HANDLE SetupCommPort(void);
+	BOOL UpdateConnection(void);
+	void StartThreads(void);
+	virtual int ExitInstance();
 };
