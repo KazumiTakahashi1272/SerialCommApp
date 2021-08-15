@@ -214,17 +214,18 @@ struct WRITEREQUEST *gpWriterTail;
 typedef struct _SERIAL_DATA
 {
 	TTYInfoStruct	TTYInfo;
-	LPFNRECEPTION	lpfnReception;
+	LPFNRECEPTION	lpfnCallBack;
 	PWRITEREQUEST	pWriteComm;
-} SERIALDATA;
+} SERIALDATA, *LPSERIALDATA;
 
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, SERIALDATA* pSerialData );
+SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, LPSERIALDATA pSerialData, LPFNRECEPTION lpfnReception );
 SERIALCOMM_API void WINAPI serialCloseComm( HANDLE hSerial );
+SERIALCOMM_API void WINAPI serialBreakDownComm( HANDLE hSerial );
 
 SERIALCOMM_API bool WINAPI serialWriteComm( HANDLE hSerial, string strData, DWORD dwDataSize );
 //SERIALCOMM_API bool WINAPI serialReadComm( HANDLE hSerial, string& strData );

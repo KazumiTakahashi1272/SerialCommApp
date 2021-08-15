@@ -629,7 +629,7 @@ BOOL CSerialCommAppApp::InitTTYInfo( SERIALDATA* pSerialData )
     ROW( m_SerialData.TTYInfo )           = MAXROWS - 1 ;
     //DISPLAYERRORS( m_SerialData.TTYInfo ) = TRUE ;
 
-	LPFNCALLBACK( m_SerialData.TTYInfo )	= pSerialData->lpfnReception;
+	LPFNCALLBACK( m_SerialData.TTYInfo )	= pSerialData->lpfnCallBack;
 
     TIMEOUTSNEW( m_SerialData.TTYInfo )   = gTimeoutsDefault;
 
@@ -1043,12 +1043,12 @@ void CSerialCommAppApp::AddToFrontOfLinkedList(PWRITEREQUEST pNode)
         OutputDebugString("SetEvent( writer packet )\r\n");
 }
 
-
-SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, SERIALDATA* pSerialData )
+//----------------------------------------------------------------------------
+// オープン
+//----------------------------------------------------------------------------
+SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, LPSERIALDATA pSerialData, LPFNRECEPTION lpfnReception )
 {
 	if ( pSerialData == NULL )
-		return NULL;
-	if ( pSerialData->lpfnReception == NULL )
 		return NULL;
 
 	if ( TTYCommMode == TTY_COMM_INIT )
@@ -1058,13 +1058,31 @@ SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, SERIALDATA* pSeri
 	}
 
 	theApp.m_SerialData = *(pSerialData);
+	theApp.m_SerialData.lpfnCallBack = lpfnReception;
 
 	theApp.SetupCommPort();
 
 	return &theApp;
 }
 
+//----------------------------------------------------------------------------
+// クローズ
+// 現在は何もしない
+//----------------------------------------------------------------------------
 SERIALCOMM_API void WINAPI serialCloseComm( HANDLE hSerial )
+{
+	if ( hSerial == NULL )
+		return;
+
+	CSerialCommAppApp* pApp = (CSerialCommAppApp*)hSerial;
+	if ( pApp != &theApp )
+		return;
+}
+
+//----------------------------------------------------------------------------
+// 切断
+//----------------------------------------------------------------------------
+SERIALCOMM_API void WINAPI serialBreakDownComm( HANDLE hSerial )
 {
 	if ( hSerial == NULL )
 		return;
@@ -1076,6 +1094,9 @@ SERIALCOMM_API void WINAPI serialCloseComm( HANDLE hSerial )
 	pApp->BreakDownCommPort();
 }
 
+//----------------------------------------------------------------------------
+// データ送信
+//----------------------------------------------------------------------------
 SERIALCOMM_API bool WINAPI serialWriteComm( HANDLE hSerial, string strData, DWORD dwDataSize )
 {
 	if ( hSerial == NULL )
