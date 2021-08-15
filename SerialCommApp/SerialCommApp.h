@@ -25,6 +25,7 @@ public:
 // オーバーライド
 public:
 	virtual BOOL InitInstance();
+	virtual int ExitInstance();
 	BOOL InitTTYInfo( SERIALDATA* pSerialData );
 
 	DECLARE_MESSAGE_MAP()
@@ -38,7 +39,6 @@ public:
 	HANDLE SetupCommPort(void);
 	BOOL UpdateConnection(void);
 	void StartThreads(void);
-	virtual int ExitInstance();
 	void WriterGeneric(char* lpBuf, DWORD dwToWrite);
 	PWRITEREQUEST RemoveFromLinkedList(PWRITEREQUEST pNode);
 	BOOL WriterAddNewNode(DWORD dwRequestType, DWORD dwSize, char ch, char* lpBuf, HANDLE hHeap);
@@ -46,4 +46,5 @@ public:
 	BOOL WriterAddFirstNodeTimeout(DWORD dwRequestType, DWORD dwSize, char ch, char* lpBuf, HANDLE hHeap, DWORD dwTimeout);
 	BOOL WriterAddNewNodeTimeout(DWORD dwRequestType, DWORD dwSize, char ch, char* lpBuf, HANDLE hHeap, DWORD dwTimeout);
 	void AddToFrontOfLinkedList(PWRITEREQUEST pNode);
+	void TransferTextStart(PWRITEREQUEST pWriteComm);
 };

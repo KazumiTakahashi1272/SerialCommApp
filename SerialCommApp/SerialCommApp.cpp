@@ -20,6 +20,7 @@ HANDLE ghWriterHeap = NULL;
 HANDLE ghWriterEvent = NULL;
 HANDLE ghTransferCompleteEvent = NULL;
 HANDLE hTransferAbortEvent = NULL;
+HANDLE hTransferThread = NULL;
 
 COMMTIMEOUTS gTimeoutsDefault = { 0x01, 0, 0, 0, 0 };
 DWORD  gdwReceiveState = NULL;
@@ -566,6 +567,47 @@ int CSerialCommAppApp::ExitInstance()
 	return CWinApp::ExitInstance();
 }
 
+void CSerialCommAppApp::TransferTextStart(PWRITEREQUEST pWriteComm)
+{
+    DWORD dwThreadId;
+
+	m_SerialData.pWriteComm->dwSize = pWriteComm->dwSize;
+	m_SerialData.pWriteComm->lpBuf = pWriteComm->lpBuf;
+
+    hTransferAbortEvent = CreateEvent( NULL, TRUE, FALSE, NULL );
+    if (hTransferAbortEvent == NULL)
+        OutputDebugString("CreateEvent(Transfer Abort Event)\r\n");
+
+	hTransferThread = ::CreateThread( NULL, 0, 
+                                (LPTHREAD_START_ROUTINE)TransferThreadProc, 
+                                (LPVOID)&theApp, 0, &dwThreadId );
+    if (hTransferThread == NULL)
+	{
+        OutputDebugString("CreateThread (Transfer Thread)\r\n");
+
+	    SetEvent( hTransferAbortEvent );
+
+		OutputDebugString( "Waiting for transfer thread...\n" );
+
+	    if ( WaitForSingleObject(hTransferThread, 3000) != WAIT_OBJECT_0 )
+		{
+	        OutputDebugString("TransferThread didn't stop.\r\n");
+			TerminateThread(hTransferThread, 0);
+		}
+		else
+			OutputDebugString("Transfer thread exited\n");
+
+		CloseHandle(hTransferAbortEvent);
+		CloseHandle(hTransferThread);
+
+		TRANSFERRING(m_SerialData.TTYInfo) = FALSE;
+    }
+    else
+	{
+        TRANSFERRING(m_SerialData.TTYInfo) = TRUE;
+	}
+}
+
 BOOL CSerialCommAppApp::InitTTYInfo( SERIALDATA* pSerialData )
 {
 	COMDEV( m_SerialData.TTYInfo )        = NULL ;
@@ -789,7 +831,7 @@ DWORD CSerialCommAppApp::WaitForThreads(DWORD dwTimeout)
 
 void CSerialCommAppApp::WriterGeneric(char* lpBuf, DWORD dwToWrite)
 {
-    OVERLAPPED osWrite = {0};
+    OVERLAPPED osWrite = { NULL };
     HANDLE hArray[2];
     DWORD dwWritten;
     DWORD dwRes;
@@ -1034,4 +1076,18 @@ SERIALCOMM_API void WINAPI serialCloseComm( HANDLE hSerial )
 	pApp->BreakDownCommPort();
 }
 
+SERIALCOMM_API bool WINAPI serialWriteComm( HANDLE hSerial, string strData, DWORD dwDataSize )
+{
+	if ( hSerial == NULL )
+		return false;
 
+	CSerialCommAppApp* pApp = (CSerialCommAppApp*)hSerial;
+	if ( pApp != &theApp )
+		return false;
+
+	pApp->m_SerialData.pWriteComm->dwSize = dwDataSize;
+	pApp->m_SerialData.pWriteComm->lpBuf = (char*)strData.c_str();
+	pApp->TransferTextStart( pApp->m_SerialData.pWriteComm );
+
+	return true;
+}

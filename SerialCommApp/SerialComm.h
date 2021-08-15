@@ -226,8 +226,8 @@ extern "C" {
 SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, SERIALDATA* pSerialData );
 SERIALCOMM_API void WINAPI serialCloseComm( HANDLE hSerial );
 
-SERIALCOMM_API bool WINAPI serialWriteComm( HANDLE hSerial, string strData );
-SERIALCOMM_API bool WINAPI serialReadComm( HANDLE hSerial, string& strData );
+SERIALCOMM_API bool WINAPI serialWriteComm( HANDLE hSerial, string strData, DWORD dwDataSize );
+//SERIALCOMM_API bool WINAPI serialReadComm( HANDLE hSerial, string& strData );
 
 #ifdef __cplusplus
 }
