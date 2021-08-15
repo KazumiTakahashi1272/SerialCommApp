@@ -25,12 +25,12 @@ public:
 // オーバーライド
 public:
 	virtual BOOL InitInstance();
-	BOOL InitTTYInfo( T_SERIAL_DATA* pSerialData );
+	BOOL InitTTYInfo( SERIALDATA* pSerialData );
 
 	DECLARE_MESSAGE_MAP()
 
 public:
-	T_SERIAL_DATA m_SerialData;
+	SERIALDATA m_SerialData;
 	HANDLE m_hThreadExitEvent;
 
 	BOOL BreakDownCommPort(void);
@@ -41,4 +41,9 @@ public:
 	virtual int ExitInstance();
 	void WriterGeneric(char* lpBuf, DWORD dwToWrite);
 	PWRITEREQUEST RemoveFromLinkedList(PWRITEREQUEST pNode);
+	BOOL WriterAddNewNode(DWORD dwRequestType, DWORD dwSize, char ch, char* lpBuf, HANDLE hHeap);
+	void AddToLinkedList(PWRITEREQUEST pNode);
+	BOOL WriterAddFirstNodeTimeout(DWORD dwRequestType, DWORD dwSize, char ch, char* lpBuf, HANDLE hHeap, DWORD dwTimeout);
+	BOOL WriterAddNewNodeTimeout(DWORD dwRequestType, DWORD dwSize, char ch, char* lpBuf, HANDLE hHeap, DWORD dwTimeout);
+	void AddToFrontOfLinkedList(PWRITEREQUEST pNode);
 };

@@ -19,9 +19,175 @@ CRITICAL_SECTION gcsDataHeap;
 HANDLE ghWriterHeap = NULL;
 HANDLE ghWriterEvent = NULL;
 HANDLE ghTransferCompleteEvent = NULL;
+HANDLE hTransferAbortEvent = NULL;
+
 COMMTIMEOUTS gTimeoutsDefault = { 0x01, 0, 0, 0, 0 };
 DWORD  gdwReceiveState = NULL;
 HANDLE ghThreadExitEvent = NULL;
+
+
+DWORD WINAPI TransferThreadProc(LPVOID lpVoid)
+{
+	DWORD  dwPacketSize, dwMaxPackets, dwFileSize;
+    DWORD  dwTransferPos;
+    HANDLE hDataHeap;
+    BOOL fStarted = TRUE;
+    BOOL fAborting = FALSE;
+
+	CSerialCommAppApp *pApp = (CSerialCommAppApp*)lpVoid;
+
+	dwPacketSize = MAX_WRITE_BUFFER;
+	dwMaxPackets = pApp->m_SerialData.pWriteComm->dwSize / dwPacketSize;
+	dwPacketSize = pApp->m_SerialData.pWriteComm->dwSize % dwPacketSize;
+	dwFileSize = pApp->m_SerialData.pWriteComm->dwSize;
+	fAborting = TRUE;
+
+    if ( !fAborting )
+	{
+        SYSTEM_INFO sysInfo;
+
+        GetSystemInfo( &sysInfo );
+        hDataHeap = HeapCreate( 0, sysInfo.dwPageSize * 2, sysInfo.dwPageSize * 10 );
+        if ( hDataHeap == NULL )
+		{
+            OutputDebugString("HeapCreate (Data Heap)\r\n");
+            fAborting = TRUE;
+        }
+    }
+
+    if ( !fAborting )
+	{
+        if ( !pApp->WriterAddNewNode(WRITE_FILESTART, dwFileSize, 0, NULL, NULL) )
+            fAborting = TRUE;
+    }
+
+    if ( WaitForSingleObject(hTransferAbortEvent, 0) == WAIT_OBJECT_0 )
+        fAborting = TRUE;
+
+	dwTransferPos = 0;
+
+	while ( !fAborting )
+	{
+        char* lpDataBuf;
+        PWRITEREQUEST pWrite;
+
+        lpDataBuf = (char*)HeapAlloc( hDataHeap, 0, dwPacketSize );
+        pWrite = (PWRITEREQUEST)HeapAlloc( ghWriterHeap, 0, sizeof(WRITEREQUEST) );
+		if ( (lpDataBuf != NULL) && (pWrite != NULL) )
+		{
+			DWORD dwRead;
+
+			for ( dwRead = 0 ; dwRead < dwPacketSize ; dwRead++ )
+				lpDataBuf[dwRead] = pApp->m_SerialData.pWriteComm->lpBuf[dwTransferPos++];
+
+		    pWrite->dwWriteType  = WRITE_FILE;
+		    pWrite->dwSize       = dwRead;
+		    pWrite->ch           = 0;
+		    pWrite->lpBuf        = lpDataBuf;
+		    pWrite->hHeap        = hDataHeap;
+			pApp->AddToLinkedList( pWrite );
+
+			if ( dwRead != dwPacketSize )
+				break;
+		}
+		else
+		{
+			BOOL fRes;
+
+            if ( lpDataBuf )
+			{
+                EnterCriticalSection( &gcsDataHeap );
+                fRes = HeapFree( hDataHeap, 0, lpDataBuf );
+                LeaveCriticalSection( &gcsDataHeap );
+                if ( !fRes )
+                    OutputDebugString("HeapFree (Data block)\r\n");
+            }
+
+            if ( pWrite )
+			{
+                EnterCriticalSection( &gcsWriterHeap );
+                fRes = HeapFree( ghWriterHeap, 0, pWrite );
+                LeaveCriticalSection( &gcsWriterHeap );
+                if ( !fRes )
+                    OutputDebugString("HeapFree (Writer block)");
+            }
+
+			OutputDebugString("Xfer: A heap is full.  Waiting...\n");
+
+            if ( WaitForSingleObject(hTransferAbortEvent, 200) == WAIT_OBJECT_0 )
+                fAborting = TRUE;
+		}
+
+        if ( WaitForSingleObject(hTransferAbortEvent, 0) == WAIT_OBJECT_0 )
+            fAborting = TRUE;
+	}
+
+	OutputDebugString("Xfer: Done sending packets.\n");
+
+    if ( fAborting )
+	{
+        OutputDebugString("Xfer: Sending Abort Packet to writer\n");
+        pApp->WriterAddFirstNodeTimeout( WRITE_ABORT, dwFileSize, 0, NULL, NULL, 500 );
+    }
+    else
+	{
+        pApp->WriterAddNewNodeTimeout( WRITE_FILEEND, dwFileSize, 0, NULL, NULL, 500 );
+	}
+
+    {
+        HANDLE hEvents[2];
+        DWORD dwRes;
+        BOOL  fTransferComplete;
+        
+        hEvents[0] = ghTransferCompleteEvent;
+        hEvents[1] = hTransferAbortEvent;
+
+        OutputDebugString("Xfer: Waiting for transfer complete signal from writer\n");
+        do
+		{
+            ResetEvent( hTransferAbortEvent );
+
+            dwRes = WaitForMultipleObjects( 2, hEvents, FALSE, INFINITE );
+            switch ( dwRes )
+			{
+            case WAIT_OBJECT_0:      
+                fTransferComplete = TRUE;   
+                OutputDebugString("Transfer complete signal rec'd\n");
+                break;
+
+            case WAIT_OBJECT_0 + 1:  
+                fAborting = TRUE;           
+                OutputDebugString("Transfer abort signal rec'd\n");
+                OutputDebugString("Xfer: Sending Abort Packet to writer\n");
+                if ( !pApp->WriterAddFirstNodeTimeout(WRITE_ABORT, dwFileSize, 0, NULL, NULL, 500) )
+                    OutputDebugString("Can't add abort packet\n");
+                break;
+
+            case WAIT_TIMEOUT:                                   break;
+            default:
+                OutputDebugString("WaitForMultipleObjects(Transfer Complete Event and Transfer Abort Event)\r\n");
+                fTransferComplete = TRUE;
+                break;
+            }
+        } while ( !fTransferComplete );
+    }
+
+	OutputDebugString("Xfer: transfer complete\n");
+
+    //if ( !fAborting )
+    //    ShowTransferStatistics( GetTickCount(), dwStartTime, dwFileSize );
+
+    if ( hDataHeap != NULL )
+	{
+        if ( !HeapDestroy(hDataHeap) )
+            OutputDebugString("HeapDestroy (data heap)\r\n");
+    }
+
+    //if ( !fAborting )
+    //    PostMessage(ghwndMain, WM_COMMAND, ID_TRANSFER_ABORTSENDING, 0);
+
+	return 1;
+}
 
 DWORD WINAPI ReaderProc( LPVOID lpVoid )
 {
@@ -400,7 +566,7 @@ int CSerialCommAppApp::ExitInstance()
 	return CWinApp::ExitInstance();
 }
 
-BOOL CSerialCommAppApp::InitTTYInfo( T_SERIAL_DATA* pSerialData )
+BOOL CSerialCommAppApp::InitTTYInfo( SERIALDATA* pSerialData )
 {
 	COMDEV( m_SerialData.TTYInfo )        = NULL ;
     CONNECTED( m_SerialData.TTYInfo )     = FALSE ;
@@ -717,8 +883,126 @@ PWRITEREQUEST CSerialCommAppApp::RemoveFromLinkedList(PWRITEREQUEST pNode)
     return pNextNode;     // return the freed node's pNext (maybe the tail)
 }
 
+BOOL CSerialCommAppApp::WriterAddNewNode(DWORD dwRequestType, DWORD dwSize, char ch, char* lpBuf, HANDLE hHeap)
+{
+    PWRITEREQUEST pWrite;
 
-SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, T_SERIAL_DATA* pSerialData )
+    pWrite = (PWRITEREQUEST)HeapAlloc( ghWriterHeap, 0, sizeof(WRITEREQUEST) );
+    if (pWrite == NULL)
+	{
+        OutputDebugString("HeapAlloc (writer packet)\r\n");
+        return FALSE;
+    }
+
+    pWrite->dwWriteType  = dwRequestType;
+    pWrite->dwSize       = dwSize;
+    pWrite->ch           = ch;
+    pWrite->lpBuf        = lpBuf;
+    pWrite->hHeap        = hHeap;
+
+    AddToLinkedList( pWrite );
+
+	return TRUE;
+}
+
+void CSerialCommAppApp::AddToLinkedList(PWRITEREQUEST pNode)
+{
+    PWRITEREQUEST pOldLast;
+
+	EnterCriticalSection( &gcsWriterHeap );
+
+    pOldLast = gpWriterTail->pPrev;
+
+    pNode->pNext = gpWriterTail;
+    pNode->pPrev = pOldLast;
+
+    pOldLast->pNext = pNode;
+    gpWriterTail->pPrev = pNode;
+
+    LeaveCriticalSection(&gcsWriterHeap);
+
+    if ( !SetEvent(ghWriterEvent) )
+        OutputDebugString("SetEvent( writer packet )\r\n");
+}
+
+BOOL CSerialCommAppApp::WriterAddFirstNodeTimeout(DWORD dwRequestType, DWORD dwSize, char ch, char* lpBuf, HANDLE hHeap, DWORD dwTimeout)
+{
+    PWRITEREQUEST pWrite;
+
+    pWrite = (PWRITEREQUEST)HeapAlloc( ghWriterHeap, 0, sizeof(WRITEREQUEST) );
+    if ( pWrite == NULL )
+	{
+        Sleep( dwTimeout );
+
+		pWrite = (PWRITEREQUEST)HeapAlloc( ghWriterHeap, 0, sizeof(WRITEREQUEST) );
+        if ( pWrite == NULL )
+		{
+            OutputDebugString("HeapAlloc (writer packet)\r\n");
+            return FALSE;
+        }
+    }
+
+	pWrite->dwWriteType  = dwRequestType;
+    pWrite->dwSize       = dwSize;
+    pWrite->ch           = ch;
+    pWrite->lpBuf        = lpBuf;
+    pWrite->hHeap        = hHeap;
+
+    AddToFrontOfLinkedList( pWrite );
+    
+    return TRUE;
+}
+
+BOOL CSerialCommAppApp::WriterAddNewNodeTimeout(DWORD dwRequestType, DWORD dwSize, char ch, char* lpBuf, HANDLE hHeap, DWORD dwTimeout)
+{
+    PWRITEREQUEST pWrite;
+
+    pWrite = (PWRITEREQUEST)HeapAlloc( ghWriterHeap, 0, sizeof(WRITEREQUEST) );
+    if ( pWrite == NULL )
+	{
+        Sleep( dwTimeout );
+
+		pWrite = (PWRITEREQUEST)HeapAlloc( ghWriterHeap, 0, sizeof(WRITEREQUEST) );
+        if ( pWrite == NULL )
+		{
+            OutputDebugString("HeapAlloc (writer packet)");
+            return FALSE;
+        }
+    }
+
+    pWrite->dwWriteType  = dwRequestType;
+    pWrite->dwSize       = dwSize;
+    pWrite->ch           = ch;
+    pWrite->lpBuf        = lpBuf;
+    pWrite->hHeap        = hHeap;
+
+    AddToLinkedList( pWrite );
+    
+    return TRUE;
+}
+
+void CSerialCommAppApp::AddToFrontOfLinkedList(PWRITEREQUEST pNode)
+{
+    PWRITEREQUEST pNextNode;
+
+	EnterCriticalSection( &gcsWriterHeap );
+
+    pNextNode = gpWriterHead->pNext;
+    
+    pNextNode->pPrev = pNode;
+    gpWriterHead->pNext = pNode;
+    
+    pNode->pNext = pNextNode;
+    pNode->pPrev = gpWriterHead;
+
+    LeaveCriticalSection( &gcsWriterHeap );
+
+    if ( !SetEvent(ghWriterEvent) )
+        OutputDebugString("SetEvent( writer packet )\r\n");
+}
+
+
+SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, SERIALDATA* pSerialData )
 {
 	if ( pSerialData == NULL )
 		return NULL;
@@ -749,3 +1033,5 @@ SERIALCOMM_API void WINAPI serialCloseComm( HANDLE hSerial )
 
 	pApp->BreakDownCommPort();
 }
+
+

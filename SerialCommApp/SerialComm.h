@@ -98,6 +98,8 @@ typedef void (CALLBACK* LPFNRECEPTION)(char* lpData, DWORD dwBufLen);
 #define SETTINGSFACTOR      5
 #define STATUSFACTOR        5
 
+#define MAX_WRITE_BUFFER	1024
+
 //----------------------------------------------------------------------------
 // 通信 data 構造体
 //----------------------------------------------------------------------------
@@ -192,15 +194,6 @@ typedef struct _TTYInfoStruct
 #define NOSTATUS( x )       (x.fNoStatus)
 #define SHOWTIMEOUTS( x )   (x.fDisplayTimeouts)
 
-//----------------------------------------------------------------------------
-// 通信パラメータ
-//----------------------------------------------------------------------------
-typedef struct _SERIAL_DATA
-{
-	TTYInfoStruct	TTYInfo;
-	LPFNRECEPTION	lpfnReception;
-} T_SERIAL_DATA;
-
 typedef struct WRITEREQUEST
 {
 	DWORD      dwWriteType;        // char, file start, file abort, file packet
@@ -208,7 +201,6 @@ typedef struct WRITEREQUEST
 	char       ch;                 // ch to send
 	char *     lpBuf;              // address of buffer to send
 	HANDLE     hHeap;              // heap containing buffer
-	HWND       hWndProgress;       // status bar window handle
 	struct WRITEREQUEST *pNext;    // next node in the list
 	struct WRITEREQUEST *pPrev;    // prev node in the list
 } WRITEREQUEST, *PWRITEREQUEST;
@@ -216,12 +208,22 @@ typedef struct WRITEREQUEST
 struct WRITEREQUEST *gpWriterHead;
 struct WRITEREQUEST *gpWriterTail;
 
+//----------------------------------------------------------------------------
+// 通信パラメータ
+//----------------------------------------------------------------------------
+typedef struct _SERIAL_DATA
+{
+	TTYInfoStruct	TTYInfo;
+	LPFNRECEPTION	lpfnReception;
+	PWRITEREQUEST	pWriteComm;
+} SERIALDATA;
+
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, T_SERIAL_DATA* pSerialData );
+SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, SERIALDATA* pSerialData );
 SERIALCOMM_API void WINAPI serialCloseComm( HANDLE hSerial );
 
 SERIALCOMM_API bool WINAPI serialWriteComm( HANDLE hSerial, string strData );
