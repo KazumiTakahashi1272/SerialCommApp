@@ -13,6 +13,8 @@
 DWORD WINAPI ReaderProc( LPVOID lpVoid );
 DWORD WINAPI WriterProc( LPVOID lpVoid );
 
+void ErrorReporter(void);
+
 // CSerialCommAppApp
 // このクラスの実装に関しては SerialCommApp.cpp を参照してください。
 //

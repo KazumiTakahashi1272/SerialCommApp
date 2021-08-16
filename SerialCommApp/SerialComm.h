@@ -215,7 +215,7 @@ typedef struct _SERIAL_DATA
 {
 	TTYInfoStruct	TTYInfo;
 	LPFNRECEPTION	lpfnCallBack;
-	PWRITEREQUEST	pWriteComm;
+	WRITEREQUEST	WriteData;
 } SERIALDATA, *LPSERIALDATA;
 
 
