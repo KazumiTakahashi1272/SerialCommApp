@@ -313,9 +313,7 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
                         if ( GetLastError() == ERROR_OPERATION_ABORTED )
                             OutputDebugString("“ÇŽæ‚è‚ª’†Ž~‚³‚ê‚Ü‚µ‚½\r\n");
                         else
-						{
 							ErrorReporter( __LINE__ );
-						}
                     }
                     else
 					{      // read completed successfully
