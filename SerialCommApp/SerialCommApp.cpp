@@ -9,7 +9,7 @@
 #define new DEBUG_NEW
 #endif
 
-#define AMOUNT_TO_READ          512
+#define AMOUNT_TO_READ          1024
 #define NUM_READSTAT_HANDLES    1
 
 CRITICAL_SECTION gStatusCritical;
@@ -1148,7 +1148,7 @@ SERIALCOMM_API void WINAPI serialBreakDownComm( HANDLE hSerial )
 //----------------------------------------------------------------------------
 // データ送信
 //----------------------------------------------------------------------------
-SERIALCOMM_API bool WINAPI serialWriteComm( HANDLE hSerial, string strData, DWORD dwDataSize )
+SERIALCOMM_API bool WINAPI serialWriteComm( HANDLE hSerial, char* lpData, DWORD dwDataSize )
 {
 	if ( hSerial == NULL )
 		return false;
@@ -1158,7 +1158,8 @@ SERIALCOMM_API bool WINAPI serialWriteComm( HANDLE hSerial, string strData, DWOR
 		return false;
 
 	pApp->m_SerialData.WriteData.dwSize = dwDataSize;
-	pApp->m_SerialData.WriteData.lpBuf = (char*)strData.c_str();
+	//pApp->m_SerialData.WriteData.lpBuf = (char*)strData.c_str();
+	pApp->m_SerialData.WriteData.lpBuf = lpData;
 
 	//pApp->TransferTextStart( &pApp->m_SerialData.WriteData );
 	pApp->WriterGeneric( pApp->m_SerialData.WriteData.lpBuf,
