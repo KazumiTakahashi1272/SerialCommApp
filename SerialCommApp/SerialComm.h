@@ -100,36 +100,73 @@ typedef void (CALLBACK* LPFNRECEPTION)(char* lpData, DWORD dwBufLen);
 
 #define MAX_WRITE_BUFFER	1024
 
+#pragma pack(push)
+#pragma pack(1)
+
 //----------------------------------------------------------------------------
 // í êM data ç\ë¢ëÃ
 //----------------------------------------------------------------------------
 typedef struct _TTYInfoStruct
 {
-    HANDLE  hCommPort, hReaderStatus, hWriter ;
+    HANDLE  hCommPort;
+	HANDLE	hReaderStatus;
+	HANDLE	hWriter;
     DWORD   dwEventFlags;
-    CHAR    Screen[MAXCOLS * MAXROWS];
-    CHAR    chFlag, chXON, chXOFF;
-    WORD    wXONLimit, wXOFFLimit;
+    //CHAR    Screen[MAXCOLS * MAXROWS];
+    CHAR    chFlag;
+	CHAR	chXON;
+	CHAR	chXOFF;
+    WORD    wXONLimit;
+	WORD	wXOFFLimit;
     DWORD   fRtsControl;
     DWORD   fDtrControl;
-    BOOL    fConnected, fTransferring, fRepeating,
-            fLocalEcho, fNewLine,
-            fDisplayErrors, fAutowrap,
-            fCTSOutFlow, fDSROutFlow, fDSRInFlow, 
-            fXonXoffOutFlow, fXonXoffInFlow,
-            fTXafterXoffSent,
-            fNoReading, fNoWriting, fNoEvents, fNoStatus,
-            fDisplayTimeouts;
-    BYTE    bPort, bByteSize, bParity, bStopBits ;
+    BOOL    fOutxCtsFlow;
+	BOOL	fOutxDsrFlow;
+	BOOL	fDsrSensitivity;
+	BOOL	fOutX;
+	BOOL	fInX;
+	BOOL	fTXContinueOnXoff;
+	BOOL	fConnected;
+	BOOL	fTransferring;
+	BOOL	fRepeating;
+	BOOL	fLocalEcho;
+	BOOL	fNewLine;
+    BOOL    fDisplayErrors;
+	BOOL	fAutowrap;
+    BOOL    fCTSOutFlow;
+	BOOL	fDSROutFlow;
+	BOOL	fDSRInFlow; 
+    BOOL    fXonXoffOutFlow;
+	BOOL	fXonXoffInFlow;
+    BOOL    fTXafterXoffSent;
+    BOOL    fNoReading;
+	BOOL	fNoWriting;
+	BOOL	fNoEvents;
+	BOOL	fNoStatus;
+    BOOL    fDisplayTimeouts;
+    BYTE    bPort;
+	BYTE	bByteSize;
+	BYTE	bParity;
+	BYTE	bStopBits;
     DWORD   dwBaudRate ;
     WORD    wCursorState ;
-    HFONT   hTTYFont ;
-    LOGFONT lfTTYFont ;
-    DWORD   rgbFGColor ;
+    //HFONT   hTTYFont ;
+    //LOGFONT lfTTYFont ;
+    //DWORD   rgbFGColor ;
     COMMTIMEOUTS timeoutsorig;
     COMMTIMEOUTS timeoutsnew;
-    int     xSize, ySize, xScroll, yScroll, xOffset, yOffset,
-            nColumn, nRow, xChar, yChar , nCharPos;
+    int     xSize;
+	int		ySize;
+	int		xScroll;
+	int		yScroll;
+	int		xOffset;
+	int		yOffset;
+    int		nColumn;
+	int		nRow;
+	int		xChar;
+	int		yChar;
+	int		nCharPos;
+
 	LPVOID	lpfnCallBack;
 
 } TTYInfoStruct;
@@ -218,6 +255,7 @@ typedef struct _SERIAL_DATA
 	WRITEREQUEST	WriteData;
 } SERIALDATA, *LPSERIALDATA;
 
+#pragma pack(pop)
 
 #ifdef __cplusplus
 extern "C" {

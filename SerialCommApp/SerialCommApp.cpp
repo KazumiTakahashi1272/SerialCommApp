@@ -39,7 +39,7 @@ void ErrorReporter( int nLine )
 
 	char* szFinal = (char*)LocalAlloc( LPTR, dwExtSize + 128 );
 
-	wsprintf( szFinal, "%d: [%d]%s\n\r", nLine, dwErr, szExtended );
+	wsprintf( szFinal, "L%d: [%d]%s\n\r", nLine, dwErr, szExtended );
 	OutputDebugString( szFinal );
 
 	LocalFree( szFinal );
@@ -69,7 +69,7 @@ DWORD WINAPI TransferThreadProc(LPVOID lpVoid)
         hDataHeap = HeapCreate( 0, sysInfo.dwPageSize * 2, sysInfo.dwPageSize * 10 );
         if ( hDataHeap == NULL )
 		{
-            OutputDebugString("HeapCreate (Data Heap is NULL)\r\n");
+			ErrorReporter( __LINE__ );
             fAborting = TRUE;
         }
     }
@@ -119,7 +119,7 @@ DWORD WINAPI TransferThreadProc(LPVOID lpVoid)
                 fRes = HeapFree( hDataHeap, 0, lpDataBuf );
                 LeaveCriticalSection( &gcsDataHeap );
                 if ( !fRes )
-                    OutputDebugString("HeapFree (Data block)\r\n");
+					ErrorReporter( __LINE__ );
             }
 
             if ( pWrite )
@@ -128,7 +128,7 @@ DWORD WINAPI TransferThreadProc(LPVOID lpVoid)
                 fRes = HeapFree( ghWriterHeap, 0, pWrite );
                 LeaveCriticalSection( &gcsWriterHeap );
                 if ( !fRes )
-                    OutputDebugString("HeapFree (Writer block)");
+					ErrorReporter( __LINE__ );
             }
 
 			OutputDebugString("Xfer: A heap is full.  Waiting...\n");
@@ -182,9 +182,12 @@ DWORD WINAPI TransferThreadProc(LPVOID lpVoid)
                     OutputDebugString("Can't add abort packet\n");
                 break;
 
-            case WAIT_TIMEOUT:                                   break;
+            case WAIT_TIMEOUT:
+				ErrorReporter( __LINE__ );
+				break;
+
             default:
-                OutputDebugString("WaitForMultipleObjects(Transfer Complete Event and Transfer Abort Event)\r\n");
+				ErrorReporter( __LINE__ );
                 fTransferComplete = TRUE;
                 break;
             }
@@ -199,7 +202,7 @@ DWORD WINAPI TransferThreadProc(LPVOID lpVoid)
     if ( hDataHeap != NULL )
 	{
         if ( !HeapDestroy(hDataHeap) )
-            OutputDebugString("HeapDestroy (data heap)\r\n");
+            ErrorReporter( __LINE__ );
     }
 
     //if ( !fAborting )
@@ -227,11 +230,11 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
 
     osReader.hEvent = CreateEvent( NULL, TRUE, FALSE, NULL );
     if ( osReader.hEvent == NULL )
-		OutputDebugString( "CreateEvent API (Reader Event)\r\n" );
+		ErrorReporter( __LINE__ );
 
     osStatus.hEvent = CreateEvent( NULL, TRUE, FALSE, NULL );
 	if ( osStatus.hEvent == NULL )
-		OutputDebugString( "CreateEvent API (Status Event)\r\n" );
+		ErrorReporter( __LINE__ );
 
     hArray[0] = osReader.hEvent;
     hArray[1] = osStatus.hEvent;
@@ -240,15 +243,15 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
 
     while ( !fThreadDone )
 	{
+        if (NOREADING( pApp->m_SerialData.TTYInfo ) )
+            fWaitingOnRead = TRUE;
+
         if ( !fWaitingOnRead )
 		{
 			if ( !ReadFile(COMDEV(pApp->m_SerialData.TTYInfo), lpBuf, AMOUNT_TO_READ, &dwRead, &osReader) )
 			{
                 if ( GetLastError() != ERROR_IO_PENDING )	  // read not delayed?
-				{
-                    OutputDebugString( "ReaderAndStatusProcのReadFile\r\n" );
 					ErrorReporter( __LINE__ );
-				}
 
                 fWaitingOnRead = TRUE;
             }
@@ -271,7 +274,7 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
 		{
             dwStoredFlags = EVENTFLAGS( pApp->m_SerialData.TTYInfo );
             if ( !SetCommMask(COMDEV(pApp->m_SerialData.TTYInfo), dwStoredFlags) )
-                OutputDebugString("SetCommMask API");
+                ErrorReporter( __LINE__ );
         }
 
         if ( NOEVENTS(pApp->m_SerialData.TTYInfo) )
@@ -286,7 +289,7 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
                 if ( !WaitCommEvent(COMDEV(pApp->m_SerialData.TTYInfo), &dwCommEvent, &osStatus) )
 				{
                     if (GetLastError() != ERROR_IO_PENDING)	  // Wait not delayed?
-                        OutputDebugString( "WaitCommEvent API\r\n" );
+                        ErrorReporter( __LINE__ );
                     else
                         fWaitingOnStat = TRUE;
                 }
@@ -298,7 +301,8 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
             }
         }
 
-        if ( fWaitingOnStat && fWaitingOnRead )
+        //if ( fWaitingOnStat && fWaitingOnRead )
+        if ( fWaitingOnRead )
 		{
             dwRes = WaitForMultipleObjects( NUM_READSTAT_HANDLES, hArray, FALSE, STATUS_CHECK_TIMEOUT );
             switch ( dwRes )
@@ -336,11 +340,12 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
                         if ( GetLastError() == ERROR_OPERATION_ABORTED )
                             OutputDebugString("WaitCommEvent API が中止\r\n");
                         else
-                            OutputDebugString("GetOverlappedResult API (in Reader)\r\n");
+                            ErrorReporter( __LINE__ );
                     }
                     else
 					{
                         //ReportStatusEvent( dwCommEvent );
+						ErrorReporter( __LINE__ );
 					}
 
                     fWaitingOnStat = FALSE;
@@ -359,11 +364,12 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
 					{
                         //CheckModemStatus( FALSE );
                         //CheckComStat( FALSE );
+						ErrorReporter( __LINE__ );
                     }
                     break;                       
 
                 default:
-                    OutputDebugString("WaitForMultipleObjects(Reader & Status handles)\r\n");
+                    ErrorReporter( __LINE__ );
                     break;
             }
         }
@@ -388,15 +394,15 @@ DWORD WINAPI WriterProc( LPVOID lpVoid )
     GetSystemInfo(&sysInfo);
     ghWriterHeap = HeapCreate( 0, sysInfo.dwPageSize*2, sysInfo.dwPageSize*4 );
     if (ghWriterHeap == NULL)
-        OutputDebugString( "HeapCreate (write request heap)\r\n" );
+        ErrorReporter( __LINE__ );
 
     ghWriterEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
     if ( ghWriterEvent == NULL )
-        OutputDebugString("CreateEvent(writ request event)\r\n");
+        ErrorReporter( __LINE__ );
 
     ghTransferCompleteEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
     if ( ghTransferCompleteEvent == NULL )
-        OutputDebugString("CreateEvent(transfer complete event)\r\n");
+        ErrorReporter( __LINE__ );
 
     dwSize = sizeof(WRITEREQUEST);
     gpWriterHead = (WRITEREQUEST*)HeapAlloc(ghWriterHeap, HEAP_ZERO_MEMORY, dwSize);
@@ -416,7 +422,7 @@ DWORD WINAPI WriterProc( LPVOID lpVoid )
 			break;
 
 		case WAIT_FAILED:
-			OutputDebugString("WaitForMultipleObjects( writer proc )\r\n");
+			ErrorReporter( __LINE__ );
 			break;
 
 		case WAIT_OBJECT_0:
@@ -448,12 +454,12 @@ DWORD WINAPI WriterProc( LPVOID lpVoid )
 						LeaveCriticalSection( &gcsDataHeap );
 
 						if ( !fRes )
-							OutputDebugString("HeapFree(file transfer buffer)\r\n");
+							ErrorReporter( __LINE__ );
 						break;
 
 					case WRITE_FILEEND:
 						if ( !SetEvent(ghTransferCompleteEvent) )
-							OutputDebugString("SetEvent (transfer complete event)\r\n");
+							ErrorReporter( __LINE__ );
 						break;
 
 					case WRITE_ABORT:
@@ -488,7 +494,7 @@ DWORD WINAPI WriterProc( LPVOID lpVoid )
 								OutputDebugString("HeapFree (Writer heap)\r\n");
 
 							if ( !SetEvent(ghTransferCompleteEvent) )
-								OutputDebugString("SetEvent (transfer complete event)\r\n");
+								ErrorReporter( __LINE__ );
 						}
 						break;
 
@@ -574,7 +580,7 @@ BOOL CSerialCommAppApp::InitInstance()
 
     ghThreadExitEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     if (ghThreadExitEvent == NULL)
-        OutputDebugString("CreateEvent (Thread exit event)\r\n");        
+        ErrorReporter( __LINE__ );        
 
 	return TRUE;
 }
@@ -600,14 +606,14 @@ void CSerialCommAppApp::TransferTextStart(PWRITEREQUEST pWriteComm)
 
     hTransferAbortEvent = CreateEvent( NULL, TRUE, FALSE, NULL );
     if (hTransferAbortEvent == NULL)
-        OutputDebugString("CreateEvent(Transfer Abort Event)\r\n");
+        ErrorReporter( __LINE__ );
 
 	hTransferThread = ::CreateThread( NULL, 0, 
                                 (LPTHREAD_START_ROUTINE)TransferThreadProc, 
                                 (LPVOID)&theApp, 0, &dwThreadId );
     if (hTransferThread == NULL)
 	{
-        OutputDebugString("CreateThread (Transfer Thread)\r\n");
+        ErrorReporter( __LINE__ );
 
 	    SetEvent( hTransferAbortEvent );
 
@@ -615,7 +621,7 @@ void CSerialCommAppApp::TransferTextStart(PWRITEREQUEST pWriteComm)
 
 	    if ( WaitForSingleObject(hTransferThread, 3000) != WAIT_OBJECT_0 )
 		{
-	        OutputDebugString("TransferThread didn't stop.\r\n");
+	        ErrorReporter( __LINE__ );
 			TerminateThread(hTransferThread, 0);
 		}
 		else
@@ -698,18 +704,18 @@ HANDLE CSerialCommAppApp::SetupCommPort(void)
 
     if ( COMDEV(m_SerialData.TTYInfo) == INVALID_HANDLE_VALUE )
 	{   
-        OutputDebugString( "CreateFile(INVALID_HANDLE_VALUE)\r\n" );
+        ErrorReporter( __LINE__ );
 		return NULL;
     }
 
 	if ( !GetCommTimeouts( COMDEV(m_SerialData.TTYInfo), &(TIMEOUTSORIG(m_SerialData.TTYInfo))) )
-        OutputDebugString( "GetCommTimeouts\r\n" );
+        ErrorReporter( __LINE__ );
 
 	UpdateConnection();
 
     SetupComm( COMDEV(m_SerialData.TTYInfo), MAX_READ_BUFFER, MAX_WRITE_BUFFER );
     if ( !EscapeCommFunction(COMDEV(m_SerialData.TTYInfo), SETDTR) )
-        OutputDebugString( "EscapeCommFunction (SETDTR)\r\n" );
+        ErrorReporter( __LINE__ );
 
 	StartThreads();
 
@@ -731,7 +737,7 @@ void CSerialCommAppApp::StartThreads(void)
                           &dwReadStatId);
 
     if ( READSTATTHREAD(m_SerialData.TTYInfo) == NULL )
-        OutputDebugString("CreateThread(Reader)\r\n");
+        ErrorReporter( __LINE__ );
 
 	WRITERTHREAD(m_SerialData.TTYInfo) = ::CreateThread( NULL, 
                           0, 
@@ -741,7 +747,7 @@ void CSerialCommAppApp::StartThreads(void)
                           &dwWriterId );
                    
     if ( WRITERTHREAD(m_SerialData.TTYInfo) == NULL )
-        OutputDebugString("CreateThread (Writer)\r\n");
+        ErrorReporter( __LINE__ );
 
     return;
 }
@@ -753,7 +759,7 @@ BOOL CSerialCommAppApp::UpdateConnection(void)
     dcb.DCBlength = sizeof(dcb);
 
     if ( !GetCommState(COMDEV(m_SerialData.TTYInfo), &dcb) )
-		OutputDebugString( "GetCommState\r\n" );
+		ErrorReporter( __LINE__ );
 
 	dcb.BaudRate = BAUDRATE( m_SerialData.TTYInfo );
     dcb.ByteSize = BYTESIZE( m_SerialData.TTYInfo );
@@ -782,10 +788,10 @@ BOOL CSerialCommAppApp::UpdateConnection(void)
     dcb.fParity			= TRUE;
 
     if ( !SetCommState(COMDEV(m_SerialData.TTYInfo), &dcb) )
-		OutputDebugString( "SetCommState\r\n" );
+		ErrorReporter( __LINE__ );
 
     if ( !SetCommTimeouts(COMDEV(m_SerialData.TTYInfo), &(TIMEOUTSNEW(m_SerialData.TTYInfo))) )
-		OutputDebugString( "SetCommTimeouts\r\n" );
+		ErrorReporter( __LINE__ );
 
 	return TRUE;
 }
@@ -801,13 +807,13 @@ BOOL CSerialCommAppApp::BreakDownCommPort(void)
 		OutputDebugString( "BreakDownCommPort:スレッドのクローズでエラー発生\r\n" );
 
 	if ( !EscapeCommFunction(COMDEV(m_SerialData.TTYInfo), CLRDTR) )
-		OutputDebugString( "BreakDownCommPort:DTR信号がOFFにできませんでした\r\n" );
+		ErrorReporter( __LINE__ );
 
     if ( !SetCommTimeouts(COMDEV(m_SerialData.TTYInfo),  &(TIMEOUTSORIG(m_SerialData.TTYInfo))) )
-		OutputDebugString( "BreakDownCommPort:タイムアウトが発生\r\n" );
+		ErrorReporter( __LINE__ );
 
     if ( !PurgeComm(COMDEV(m_SerialData.TTYInfo), PURGE_FLAGS) )
-		OutputDebugString( "BreakDownCommPort:バッファクリアでエラーが発生\r\n" );
+		ErrorReporter( __LINE__ );
 
     CloseHandle( COMDEV(m_SerialData.TTYInfo) );
     CloseHandle( READSTATTHREAD(m_SerialData.TTYInfo) );
@@ -837,10 +843,10 @@ DWORD CSerialCommAppApp::WaitForThreads(DWORD dwTimeout)
         case WAIT_TIMEOUT:
             
             if (WaitForSingleObject(READSTATTHREAD(m_SerialData.TTYInfo), 0) == WAIT_TIMEOUT)
-                OutputDebugString("リーダー/ステータススレッドが終了しませんでした。\n\r");
+                ErrorReporter( __LINE__ );
 
             if (WaitForSingleObject(WRITERTHREAD(m_SerialData.TTYInfo), 0) == WAIT_TIMEOUT)
-                OutputDebugString("ライタースレッドが終了しませんでした。\n\r");
+                ErrorReporter( __LINE__ );
 
             break;
 
@@ -865,7 +871,7 @@ void CSerialCommAppApp::WriterGeneric(char* lpBuf, DWORD dwToWrite)
 
     osWrite.hEvent = CreateEvent( NULL, TRUE, FALSE, NULL );
     if ( osWrite.hEvent == NULL )
-        OutputDebugString("CreateEvent (overlapped write hEvent)\r\n");
+        ErrorReporter( __LINE__ );
 
     hArray[0] = osWrite.hEvent;
     hArray[1] = ghThreadExitEvent;
@@ -878,7 +884,7 @@ void CSerialCommAppApp::WriterGeneric(char* lpBuf, DWORD dwToWrite)
 			switch ( dwRes )
 			{
 			default:
-				OutputDebugString("WaitForMultipleObjects (WriterGeneric)\r\n");
+				ErrorReporter( __LINE__ );
 				break;
 
 			case WAIT_OBJECT_0:
@@ -888,14 +894,14 @@ void CSerialCommAppApp::WriterGeneric(char* lpBuf, DWORD dwToWrite)
 					if ( GetLastError() == ERROR_OPERATION_ABORTED )
 						OutputDebugString("書き込みが中止されました\r\n");
 					else
-						OutputDebugString("GetOverlappedResult(in Writer)");
+						ErrorReporter( __LINE__ );
 
 					if ( dwWritten != dwToWrite )
 					{
 						if ( (GetLastError() == ERROR_SUCCESS) && SHOWTIMEOUTS(m_SerialData.TTYInfo) )
 							OutputDebugString("書き込みがタイムアウトしました。(overlapped)\r\n");
 						else
-							OutputDebugString("ポートへのデータの書き込み中にエラーが発生しました。(overlapped)");
+							ErrorReporter( __LINE__ );
 					}
 				}
 				break;
@@ -904,16 +910,17 @@ void CSerialCommAppApp::WriterGeneric(char* lpBuf, DWORD dwToWrite)
 				break;
 
 			case WAIT_TIMEOUT:
-				OutputDebugString("WriterGenericでタイムアウトを待ちます。\r\n");
+				ErrorReporter( __LINE__ );
 				break;
 
 			case WAIT_FAILED:
+				ErrorReporter( __LINE__ );
 				break;
 			}
 		}
 		else
 		{
-			OutputDebugString("WriteFile (in Writer)\r\n");
+			ErrorReporter( __LINE__ );
 		}
 	}
 	else
@@ -956,7 +963,7 @@ BOOL CSerialCommAppApp::WriterAddNewNode(DWORD dwRequestType, DWORD dwSize, char
     pWrite = (PWRITEREQUEST)HeapAlloc( ghWriterHeap, 0, sizeof(WRITEREQUEST) );
     if (pWrite == NULL)
 	{
-        OutputDebugString("HeapAlloc (writer packet)\r\n");
+        ErrorReporter( __LINE__ );
         return FALSE;
     }
 
@@ -988,7 +995,7 @@ void CSerialCommAppApp::AddToLinkedList(PWRITEREQUEST pNode)
     LeaveCriticalSection(&gcsWriterHeap);
 
     if ( !SetEvent(ghWriterEvent) )
-        OutputDebugString("SetEvent( writer packet )\r\n");
+        ErrorReporter( __LINE__ );
 }
 
 BOOL CSerialCommAppApp::WriterAddFirstNodeTimeout(DWORD dwRequestType, DWORD dwSize, char ch, char* lpBuf, HANDLE hHeap, DWORD dwTimeout)
@@ -1003,7 +1010,7 @@ BOOL CSerialCommAppApp::WriterAddFirstNodeTimeout(DWORD dwRequestType, DWORD dwS
 		pWrite = (PWRITEREQUEST)HeapAlloc( ghWriterHeap, 0, sizeof(WRITEREQUEST) );
         if ( pWrite == NULL )
 		{
-            OutputDebugString("HeapAlloc (writer packet)\r\n");
+            ErrorReporter( __LINE__ );
             return FALSE;
         }
     }
@@ -1031,7 +1038,7 @@ BOOL CSerialCommAppApp::WriterAddNewNodeTimeout(DWORD dwRequestType, DWORD dwSiz
 		pWrite = (PWRITEREQUEST)HeapAlloc( ghWriterHeap, 0, sizeof(WRITEREQUEST) );
         if ( pWrite == NULL )
 		{
-            OutputDebugString("HeapAlloc (writer packet)");
+            ErrorReporter( __LINE__ );
             return FALSE;
         }
     }
@@ -1064,7 +1071,7 @@ void CSerialCommAppApp::AddToFrontOfLinkedList(PWRITEREQUEST pNode)
     LeaveCriticalSection( &gcsWriterHeap );
 
     if ( !SetEvent(ghWriterEvent) )
-        OutputDebugString("SetEvent( writer packet )\r\n");
+        ErrorReporter( __LINE__ );
 }
 
 //----------------------------------------------------------------------------
@@ -1081,8 +1088,30 @@ SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, LPSERIALDATA pSer
 		return &theApp;
 	}
 
-	theApp.m_SerialData = *(pSerialData);
-	theApp.m_SerialData.lpfnCallBack = lpfnReception;
+	LPFNCALLBACK( theApp.m_SerialData.TTYInfo )		= LPFNCALLBACK( pSerialData->TTYInfo );
+
+	PORT( theApp.m_SerialData.TTYInfo )				= PORT( pSerialData->TTYInfo );
+	BAUDRATE( theApp.m_SerialData.TTYInfo )			= BAUDRATE( pSerialData->TTYInfo );
+	BYTESIZE( theApp.m_SerialData.TTYInfo )			= BYTESIZE( pSerialData->TTYInfo );
+    PARITY( theApp.m_SerialData.TTYInfo )			= PARITY( pSerialData->TTYInfo );
+    STOPBITS( theApp.m_SerialData.TTYInfo )			= STOPBITS( pSerialData->TTYInfo );
+	FLAGCHAR( theApp.m_SerialData.TTYInfo )			= FLAGCHAR( pSerialData->TTYInfo );
+
+	DTRCONTROL( theApp.m_SerialData.TTYInfo )		= DTRCONTROL( pSerialData->TTYInfo );
+	RTSCONTROL( theApp.m_SerialData.TTYInfo )		= RTSCONTROL( pSerialData->TTYInfo );
+
+    CTSOUTFLOW( theApp.m_SerialData.TTYInfo )		= CTSOUTFLOW( pSerialData->TTYInfo );
+    DSROUTFLOW( theApp.m_SerialData.TTYInfo )		= DSROUTFLOW( pSerialData->TTYInfo );
+    DSRINFLOW( theApp.m_SerialData.TTYInfo )		= DSRINFLOW( pSerialData->TTYInfo );
+    XONXOFFOUTFLOW( theApp.m_SerialData.TTYInfo )	= XONXOFFOUTFLOW( pSerialData->TTYInfo );
+    XONXOFFINFLOW( theApp.m_SerialData.TTYInfo )	= XONXOFFINFLOW( pSerialData->TTYInfo );
+    TXAFTERXOFFSENT( theApp.m_SerialData.TTYInfo )	= TXAFTERXOFFSENT( pSerialData->TTYInfo );
+    XONCHAR( theApp.m_SerialData.TTYInfo )			= XONCHAR( pSerialData->TTYInfo );
+    XOFFCHAR( theApp.m_SerialData.TTYInfo )			= XOFFCHAR( pSerialData->TTYInfo );
+    XONLIMIT( theApp.m_SerialData.TTYInfo )			= XONLIMIT( pSerialData->TTYInfo );
+    XOFFLIMIT( theApp.m_SerialData.TTYInfo )		= XOFFLIMIT( pSerialData->TTYInfo );
+
+	//PARITY( theApp.m_SerialData.TTYInfo )			= pSerialData->TTYInfo.bParity;
 
 	theApp.SetupCommPort();
 
