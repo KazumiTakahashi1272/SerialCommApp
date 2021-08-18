@@ -1070,7 +1070,7 @@ void CSerialCommAppApp::AddToFrontOfLinkedList(PWRITEREQUEST pNode)
 //----------------------------------------------------------------------------
 // ƒI[ƒvƒ“
 //----------------------------------------------------------------------------
-SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, LPSERIALDATA pSerialData, LPFNRECEPTION lpfnReception )
+SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, LPSERIALDATA pSerialData )
 {
 	if ( pSerialData == NULL )
 		return NULL;
@@ -1082,6 +1082,7 @@ SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, LPSERIALDATA pSer
 	}
 
 	LPFNCALLBACK( theApp.m_SerialData.TTYInfo )		= LPFNCALLBACK( pSerialData->TTYInfo );
+	LPFNNOTIFY( theApp.m_SerialData.TTYInfo)		= LPFNNOTIFY( pSerialData->TTYInfo );
 
 	PORT( theApp.m_SerialData.TTYInfo )				= PORT( pSerialData->TTYInfo );
 	BAUDRATE( theApp.m_SerialData.TTYInfo )			= BAUDRATE( pSerialData->TTYInfo );
@@ -1153,18 +1154,10 @@ SERIALCOMM_API bool WINAPI serialWriteComm( HANDLE hSerial, char* lpData, DWORD 
 		return false;
 
 	pApp->m_SerialData.WriteData.dwSize = dwDataSize;
-	//pApp->m_SerialData.WriteData.lpBuf = (char*)strData.c_str();
 	pApp->m_SerialData.WriteData.lpBuf = lpData;
 
-	//pApp->TransferTextStart( &pApp->m_SerialData.WriteData );
 	pApp->WriterGeneric( pApp->m_SerialData.WriteData.lpBuf,
 						 pApp->m_SerialData.WriteData.dwSize );
-	//pApp->WriterAddNewNodeTimeout( WRITE_BLOCK,
-	//							   pApp->m_SerialData.WriteData.dwSize,
-	//							   0,
-	//							   pApp->m_SerialData.WriteData.lpBuf,
-	//							   0,
-	//							   10 );
 
 	return true;
 }

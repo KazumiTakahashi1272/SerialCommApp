@@ -23,6 +23,7 @@ using namespace std;
 // コールバック関数
 //
 typedef void (CALLBACK* LPFNRECEPTION)(HANDLE hCommPort, char* lpData, DWORD dwBufLen);
+typedef void (CALLBACK* LPFNNOTIFY)(DWORD dwNotify);
 
 //
 //
@@ -100,6 +101,17 @@ typedef void (CALLBACK* LPFNRECEPTION)(HANDLE hCommPort, char* lpData, DWORD dwB
 
 #define MAX_WRITE_BUFFER	1024
 
+//
+// 通知
+//
+typedef enum _NOTIFYCALLBACK
+{
+	NOTIFY_READIMMTIMEOUT = 1000,		// 読取りはすぐにタイムアウトしました。
+	NOTIFY_READABORTED,					// 読取りが中止されました
+	NOTIFY_READTIMEOUTDUP,				// 読み取りタイムアウトが重複しています。
+	NOTIFY_WAITCOMMEVENTABORTED,		// WaitCommEvent API が中止
+} NOTIFYCALLBACK;
+
 #pragma pack(push)
 #pragma pack(1)
 
@@ -168,6 +180,7 @@ typedef struct _TTYInfoStruct
 	int		nCharPos;
 
 	LPVOID	lpfnCallBack;
+	LPVOID	lpfnNotify;
 
 } TTYInfoStruct;
 
@@ -211,6 +224,7 @@ typedef struct _TTYInfoStruct
 #define SCREENCHAR( x, col, row )   (x.Screen[row * MAXCOLS + col])
 
 #define LPFNCALLBACK( x )	(x.lpfnCallBack)
+#define LPFNNOTIFY( x )		(x.lpfnNotify)
 
 #define DTRCONTROL( x )     (x.fDtrControl)
 #define RTSCONTROL( x )     (x.fRtsControl)
@@ -252,6 +266,7 @@ typedef struct _SERIAL_DATA
 {
 	TTYInfoStruct	TTYInfo;
 	LPFNRECEPTION	lpfnCallBack;
+	LPFNNOTIFY		lpfnNotify;
 	WRITEREQUEST	WriteData;
 } SERIALDATA, *LPSERIALDATA;
 
@@ -261,7 +276,7 @@ typedef struct _SERIAL_DATA
 extern "C" {
 #endif
 
-SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, LPSERIALDATA pSerialData, LPFNRECEPTION lpfnReception );
+SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, LPSERIALDATA pSerialData );
 SERIALCOMM_API void WINAPI serialCloseComm( HANDLE hSerial );
 SERIALCOMM_API void WINAPI serialBreakDownComm( HANDLE hSerial );
 
