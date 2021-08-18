@@ -20,9 +20,9 @@ using namespace std;
 #endif
 
 //
+// コールバック関数
 //
-//
-typedef void (CALLBACK* LPFNRECEPTION)(char* lpData, DWORD dwBufLen);
+typedef void (CALLBACK* LPFNRECEPTION)(HANDLE hCommPort, char* lpData, DWORD dwBufLen);
 
 //
 //

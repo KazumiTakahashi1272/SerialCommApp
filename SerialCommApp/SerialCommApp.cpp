@@ -265,7 +265,7 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
 					LPFNRECEPTION lpfnCallBack = NULL;
 
 					lpfnCallBack = (LPFNRECEPTION)LPFNCALLBACK( pApp->m_SerialData.TTYInfo );
-                    lpfnCallBack( lpBuf, dwRead );
+                    lpfnCallBack( COMDEV(pApp->m_SerialData.TTYInfo), lpBuf, dwRead );
 				}
             }
         }
@@ -325,7 +325,7 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
 							LPFNRECEPTION lpfnCallBack = NULL;
 
 							lpfnCallBack = (LPFNRECEPTION)LPFNCALLBACK( pApp->m_SerialData.TTYInfo );
-							lpfnCallBack( lpBuf, dwRead );
+							lpfnCallBack( COMDEV(pApp->m_SerialData.TTYInfo), lpBuf, dwRead );
 						}
                     }
 
