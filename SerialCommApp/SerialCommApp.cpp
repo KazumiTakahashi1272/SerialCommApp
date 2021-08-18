@@ -39,7 +39,7 @@ void ErrorReporter( int nLine )
 
 	char* szFinal = (char*)LocalAlloc( LPTR, dwExtSize + 128 );
 
-	wsprintf( szFinal, "L%d: [%d]%s\n\r", nLine, dwErr, szExtended );
+	wsprintf( szFinal, "L%d: [%d]%s\n", nLine, dwErr, szExtended );
 	OutputDebugString( szFinal );
 
 	LocalFree( szFinal );
@@ -358,12 +358,7 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
                     break;
 
                 case WAIT_TIMEOUT:
-                    if ( !NOSTATUS(pApp->m_SerialData.TTYInfo) )
-					{
-                        //CheckModemStatus( FALSE );
-                        //CheckComStat( FALSE );
-						ErrorReporter( __LINE__ );
-                    }
+					ErrorReporter( __LINE__ );
                     break;                       
 
                 default:
