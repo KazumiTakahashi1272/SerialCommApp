@@ -228,6 +228,9 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
 
 	CSerialCommAppApp *pApp = (CSerialCommAppApp*)lpVoid;
 
+	LPFNNOTIFY Notify = (LPFNNOTIFY)LPFNNOTIFY( pApp->m_SerialData.TTYInfo );
+	LPFNRECEPTION CallBack = (LPFNRECEPTION)LPFNCALLBACK( pApp->m_SerialData.TTYInfo );
+
     osReader.hEvent = CreateEvent( NULL, TRUE, FALSE, NULL );
     if ( osReader.hEvent == NULL )
 		ErrorReporter( __LINE__ );
@@ -258,15 +261,10 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
             else
 			{
                 if ( (dwRead != MAX_READ_BUFFER) && SHOWTIMEOUTS(pApp->m_SerialData.TTYInfo) )
-                    OutputDebugString( "読取りはすぐにタイムアウトしました。\r\n" );
+					Notify( NOTIFY_READIMMTIMEOUT );
 
                 if ( dwRead )
-				{
-					LPFNRECEPTION lpfnCallBack = NULL;
-
-					lpfnCallBack = (LPFNRECEPTION)LPFNCALLBACK( pApp->m_SerialData.TTYInfo );
-                    lpfnCallBack( COMDEV(pApp->m_SerialData.TTYInfo), lpBuf, dwRead );
-				}
+                    CallBack( COMDEV(pApp->m_SerialData.TTYInfo), lpBuf, dwRead );
             }
         }
 
@@ -301,7 +299,6 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
             }
         }
 
-        //if ( fWaitingOnStat && fWaitingOnRead )
         if ( fWaitingOnRead )
 		{
             dwRes = WaitForMultipleObjects( NUM_READSTAT_HANDLES, hArray, FALSE, STATUS_CHECK_TIMEOUT );
@@ -311,22 +308,17 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
                     if ( !GetOverlappedResult(COMDEV(pApp->m_SerialData.TTYInfo), &osReader, &dwRead, FALSE) )
 					{
                         if ( GetLastError() == ERROR_OPERATION_ABORTED )
-                            OutputDebugString("読取りが中止されました\r\n");
+                            Notify( NOTIFY_READABORTED );
                         else
 							ErrorReporter( __LINE__ );
                     }
                     else
 					{      // read completed successfully
                         if ( (dwRead != MAX_READ_BUFFER) && SHOWTIMEOUTS(pApp->m_SerialData.TTYInfo) )
-                            OutputDebugString("読み取りタイムアウトが重複しています。\r\n");
+                            Notify( NOTIFY_READTIMEOUTDUP );
 
                         if ( dwRead )
-						{
-							LPFNRECEPTION lpfnCallBack = NULL;
-
-							lpfnCallBack = (LPFNRECEPTION)LPFNCALLBACK( pApp->m_SerialData.TTYInfo );
-							lpfnCallBack( COMDEV(pApp->m_SerialData.TTYInfo), lpBuf, dwRead );
-						}
+							CallBack( COMDEV(pApp->m_SerialData.TTYInfo), lpBuf, dwRead );
                     }
 
                     fWaitingOnRead = FALSE;
@@ -336,7 +328,7 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
                     if ( !GetOverlappedResult(COMDEV(pApp->m_SerialData.TTYInfo), &osStatus, &dwOvRes, FALSE) )
 					{
                         if ( GetLastError() == ERROR_OPERATION_ABORTED )
-                            OutputDebugString("WaitCommEvent API が中止\r\n");
+                            Notify( NOTIFY_WAITCOMMEVENTABORTED );
                         else
                             ErrorReporter( __LINE__ );
                     }
@@ -384,6 +376,8 @@ DWORD WINAPI WriterProc( LPVOID lpVoid )
 
 	CSerialCommAppApp *pApp = (CSerialCommAppApp*)lpVoid;
 
+	LPFNNOTIFY Notify = (LPFNNOTIFY)LPFNNOTIFY( pApp->m_SerialData.TTYInfo );
+
     GetSystemInfo(&sysInfo);
     ghWriterHeap = HeapCreate( 0, sysInfo.dwPageSize*2, sysInfo.dwPageSize*4 );
     if (ghWriterHeap == NULL)
@@ -429,7 +423,7 @@ DWORD WINAPI WriterProc( LPVOID lpVoid )
 					switch ( pWrite->dwWriteType )
 					{
 					default:
-						OutputDebugString("不正な書き込みリクエスト\r\n");
+						Notify( NOTIFY_ILLEGALWRITEREQUEST );
 						break;
 
 					case WRITE_CHAR:
@@ -859,6 +853,8 @@ void CSerialCommAppApp::WriterGeneric(char* lpBuf, DWORD dwToWrite)
     DWORD dwWritten;
     DWORD dwRes;
 
+	LPFNNOTIFY Notify = (LPFNNOTIFY)LPFNNOTIFY( m_SerialData.TTYInfo );
+
     if ( NOWRITING(m_SerialData.TTYInfo) )
         return ;
 
@@ -885,14 +881,14 @@ void CSerialCommAppApp::WriterGeneric(char* lpBuf, DWORD dwToWrite)
 				if ( !GetOverlappedResult(COMDEV(m_SerialData.TTYInfo), &osWrite, &dwWritten, FALSE) )
 				{
 					if ( GetLastError() == ERROR_OPERATION_ABORTED )
-						OutputDebugString("書き込みが中止されました\r\n");
+						Notify( NOTIFY_OPERATION_ABORTED );
 					else
 						ErrorReporter( __LINE__ );
 
 					if ( dwWritten != dwToWrite )
 					{
 						if ( (GetLastError() == ERROR_SUCCESS) && SHOWTIMEOUTS(m_SerialData.TTYInfo) )
-							OutputDebugString("書き込みがタイムアウトしました。(overlapped)\r\n");
+							Notify( NOTIFY_OPERATION_TIMEOUT );
 						else
 							ErrorReporter( __LINE__ );
 					}
@@ -919,7 +915,7 @@ void CSerialCommAppApp::WriterGeneric(char* lpBuf, DWORD dwToWrite)
 	else
 	{
 		if ( dwWritten != dwToWrite )
-			OutputDebugString("書き込みがタイムアウトしました。(immediate)\r\n");
+			Notify( NOTIFY_OPERATION_TIMEOUT );
 	}
 
 	CloseHandle( osWrite.hEvent );
@@ -944,7 +940,7 @@ PWRITEREQUEST CSerialCommAppApp::RemoveFromLinkedList(PWRITEREQUEST pNode)
     LeaveCriticalSection(&gcsWriterHeap);
 
     if (!bRes)
-        OutputDebugString("HeapFree(write request)\r\n");
+        ErrorReporter( __LINE__ );
 
     return pNextNode;     // return the freed node's pNext (maybe the tail)
 }

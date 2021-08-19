@@ -102,7 +102,7 @@ typedef void (CALLBACK* LPFNNOTIFY)(DWORD dwNotify);
 #define MAX_WRITE_BUFFER	1024
 
 //
-// 通知
+// 通知イベント
 //
 typedef enum _NOTIFYCALLBACK
 {
@@ -110,6 +110,9 @@ typedef enum _NOTIFYCALLBACK
 	NOTIFY_READABORTED,					// 読取りが中止されました
 	NOTIFY_READTIMEOUTDUP,				// 読み取りタイムアウトが重複しています。
 	NOTIFY_WAITCOMMEVENTABORTED,		// WaitCommEvent API が中止
+	NOTIFY_ILLEGALWRITEREQUEST,			// 不正な書き込みリクエスト
+	NOTIFY_OPERATION_ABORTED,			// 書き込みが中止されました
+	NOTIFY_OPERATION_TIMEOUT,			// 書き込みがタイムアウトしました
 } NOTIFYCALLBACK;
 
 #pragma pack(push)
