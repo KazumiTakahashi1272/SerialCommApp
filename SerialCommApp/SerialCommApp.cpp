@@ -340,7 +340,7 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
 								CallBack( COMDEV(pApp->m_SerialData.TTYInfo), lpBuf, dwRead );
 						}
 
-						//SetEvent( ghStatusMessageEvent );
+						SetEvent( ghStatusMessageEvent );
                     }
 
                     fWaitingOnRead = FALSE;
@@ -357,7 +357,7 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
                         else
                             ErrorReporter( __LINE__ );
 
-						//SetEvent( ghStatusMessageEvent );
+						SetEvent( ghStatusMessageEvent );
                     }
                     else
 					{
