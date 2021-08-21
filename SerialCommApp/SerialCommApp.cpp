@@ -10,7 +10,7 @@
 #endif
 
 #define AMOUNT_TO_READ          1024
-#define NUM_READSTAT_HANDLES    1
+#define NUM_READSTAT_HANDLES    2
 
 CRITICAL_SECTION gStatusCritical;
 CRITICAL_SECTION gcsWriterHeap;
@@ -21,10 +21,15 @@ HANDLE ghWriterEvent = NULL;
 HANDLE ghTransferCompleteEvent = NULL;
 HANDLE hTransferAbortEvent = NULL;
 HANDLE hTransferThread = NULL;
+HANDLE ghStatusMessageEvent = NULL;
 
 COMMTIMEOUTS gTimeoutsDefault = { 0x01, 0, 0, 0, 0 };
 DWORD  gdwReceiveState = NULL;
 HANDLE ghThreadExitEvent = NULL;
+
+
+// 唯一の CSerialCommAppApp オブジェクトです。
+CSerialCommAppApp theApp;
 
 void ErrorReporter( int nLine )
 {
@@ -228,8 +233,8 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
 
 	CSerialCommAppApp *pApp = (CSerialCommAppApp*)lpVoid;
 
-	LPFNNOTIFY Notify = (LPFNNOTIFY)LPFNNOTIFY( pApp->m_SerialData.TTYInfo );
-	LPFNRECEPTION CallBack = (LPFNRECEPTION)LPFNCALLBACK( pApp->m_SerialData.TTYInfo );
+	LPFNNOTIFY Notify = FNNOTIFY( pApp->m_SerialData.TTYInfo );
+	LPFNRECEPTION CallBack = FNCALLBACK( pApp->m_SerialData.TTYInfo );
 
     osReader.hEvent = CreateEvent( NULL, TRUE, FALSE, NULL );
     if ( osReader.hEvent == NULL )
@@ -241,8 +246,10 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
 
     hArray[0] = osReader.hEvent;
     hArray[1] = osStatus.hEvent;
-    hArray[2] = NULL;
+    hArray[2] = ghStatusMessageEvent;
     hArray[3] = NULL;
+
+	pApp->CheckModemStatus( TRUE );
 
     while ( !fThreadDone )
 	{
@@ -261,10 +268,17 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
             else
 			{
                 if ( (dwRead != MAX_READ_BUFFER) && SHOWTIMEOUTS(pApp->m_SerialData.TTYInfo) )
-					Notify( NOTIFY_READIMMTIMEOUT );
+				{
+					if ( Notify != NULL )
+						Notify( NOTIFY_READIMMTIMEOUT );
+					SetEvent( ghStatusMessageEvent );
+				}
 
                 if ( dwRead )
-                    CallBack( COMDEV(pApp->m_SerialData.TTYInfo), lpBuf, dwRead );
+				{
+                    if ( CallBack != NULL )
+						CallBack( COMDEV(pApp->m_SerialData.TTYInfo), lpBuf, dwRead );
+				}
             }
         }
 
@@ -293,13 +307,13 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
                 }
                 else
 				{
-                    //ReportStatusEvent( dwCommEvent );
-					ErrorReporter( __LINE__ );
+					ResetEvent( ghStatusMessageEvent );
+					theApp.ReportModemStatus( dwCommEvent );
 				}
             }
         }
 
-        if ( fWaitingOnRead )
+		if ( fWaitingOnStat && fWaitingOnRead )
 		{
             dwRes = WaitForMultipleObjects( NUM_READSTAT_HANDLES, hArray, FALSE, STATUS_CHECK_TIMEOUT );
             switch ( dwRes )
@@ -308,17 +322,25 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
                     if ( !GetOverlappedResult(COMDEV(pApp->m_SerialData.TTYInfo), &osReader, &dwRead, FALSE) )
 					{
                         if ( GetLastError() == ERROR_OPERATION_ABORTED )
-                            Notify( NOTIFY_READABORTED );
+                            if ( Notify != NULL ) Notify( NOTIFY_READABORTED );
                         else
 							ErrorReporter( __LINE__ );
                     }
                     else
 					{      // read completed successfully
                         if ( (dwRead != MAX_READ_BUFFER) && SHOWTIMEOUTS(pApp->m_SerialData.TTYInfo) )
-                            Notify( NOTIFY_READTIMEOUTDUP );
+						{
+                            if ( Notify != NULL )
+								Notify( NOTIFY_READTIMEOUTDUP );
+						}
 
                         if ( dwRead )
-							CallBack( COMDEV(pApp->m_SerialData.TTYInfo), lpBuf, dwRead );
+						{
+							if ( CallBack != NULL )
+								CallBack( COMDEV(pApp->m_SerialData.TTYInfo), lpBuf, dwRead );
+						}
+
+						//SetEvent( ghStatusMessageEvent );
                     }
 
                     fWaitingOnRead = FALSE;
@@ -328,14 +350,19 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
                     if ( !GetOverlappedResult(COMDEV(pApp->m_SerialData.TTYInfo), &osStatus, &dwOvRes, FALSE) )
 					{
                         if ( GetLastError() == ERROR_OPERATION_ABORTED )
-                            Notify( NOTIFY_WAITCOMMEVENTABORTED );
+						{
+                            if ( Notify != NULL )
+								Notify( NOTIFY_WAITCOMMEVENTABORTED );
+						}
                         else
                             ErrorReporter( __LINE__ );
+
+						//SetEvent( ghStatusMessageEvent );
                     }
                     else
 					{
-                        //ReportStatusEvent( dwCommEvent );
-						ErrorReporter( __LINE__ );
+						ResetEvent( ghStatusMessageEvent );
+						theApp.ReportModemStatus( dwCommEvent );
 					}
 
                     fWaitingOnStat = FALSE;
@@ -350,6 +377,10 @@ DWORD WINAPI ReaderProc( LPVOID lpVoid )
                     break;
 
                 case WAIT_TIMEOUT:
+                    if ( !NOSTATUS(pApp->m_SerialData.TTYInfo) )
+					{
+                        pApp->CheckModemStatus( FALSE );
+                    }
 					ErrorReporter( __LINE__ );
                     break;                       
 
@@ -376,7 +407,7 @@ DWORD WINAPI WriterProc( LPVOID lpVoid )
 
 	CSerialCommAppApp *pApp = (CSerialCommAppApp*)lpVoid;
 
-	LPFNNOTIFY Notify = (LPFNNOTIFY)LPFNNOTIFY( pApp->m_SerialData.TTYInfo );
+	LPFNNOTIFY Notify = FNNOTIFY( pApp->m_SerialData.TTYInfo );
 
     GetSystemInfo(&sysInfo);
     ghWriterHeap = HeapCreate( 0, sysInfo.dwPageSize*2, sysInfo.dwPageSize*4 );
@@ -423,7 +454,8 @@ DWORD WINAPI WriterProc( LPVOID lpVoid )
 					switch ( pWrite->dwWriteType )
 					{
 					default:
-						Notify( NOTIFY_ILLEGALWRITEREQUEST );
+						if ( Notify != NULL ) Notify( NOTIFY_ILLEGALWRITEREQUEST );
+						SetEvent( ghStatusMessageEvent );
 						break;
 
 					case WRITE_CHAR:
@@ -550,11 +582,6 @@ CSerialCommAppApp::CSerialCommAppApp()
 	// ここに InitInstance 中の重要な初期化処理をすべて記述してください。
 }
 
-
-// 唯一の CSerialCommAppApp オブジェクトです。
-
-CSerialCommAppApp theApp;
-
 // CSerialCommAppApp 初期化
 
 BOOL CSerialCommAppApp::InitInstance()
@@ -567,7 +594,11 @@ BOOL CSerialCommAppApp::InitInstance()
 
     ghThreadExitEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     if (ghThreadExitEvent == NULL)
-        ErrorReporter( __LINE__ );        
+        ErrorReporter( __LINE__ );
+
+    ghStatusMessageEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    if ( ghStatusMessageEvent == NULL )
+        ErrorReporter( __LINE__ );
 
 	return TRUE;
 }
@@ -580,6 +611,9 @@ int CSerialCommAppApp::ExitInstance()
 
 	if ( ghThreadExitEvent != NULL )
 	    CloseHandle( ghThreadExitEvent );
+
+	if ( ghStatusMessageEvent != NULL )
+		CloseHandle(ghStatusMessageEvent);
 
 	return CWinApp::ExitInstance();
 }
@@ -646,7 +680,9 @@ BOOL CSerialCommAppApp::InitTTYInfo( SERIALDATA* pSerialData )
     ROW( m_SerialData.TTYInfo )           = MAXROWS - 1 ;
     //DISPLAYERRORS( m_SerialData.TTYInfo ) = TRUE ;
 
-	LPFNCALLBACK( m_SerialData.TTYInfo )	= pSerialData->lpfnCallBack;
+	FNCALLBACK( m_SerialData.TTYInfo )	  = FNCALLBACK( pSerialData->TTYInfo );
+	FNNOTIFY( m_SerialData.TTYInfo )	  = FNNOTIFY( pSerialData->TTYInfo );
+	FNMODEMSTS( m_SerialData.TTYInfo )	  = FNMODEMSTS( pSerialData->TTYInfo );
 
     TIMEOUTSNEW( m_SerialData.TTYInfo )   = gTimeoutsDefault;
 
@@ -680,7 +716,11 @@ HANDLE CSerialCommAppApp::SetupCommPort(void)
 {
 	TCHAR szPort[32] = { NULL };
 
-	wsprintf( szPort, "COM%d", PORT(m_SerialData.TTYInfo) );
+	if ( PORT(m_SerialData.TTYInfo) > 9 )
+		wsprintf( szPort, "\\\\.\\COM%d", PORT(m_SerialData.TTYInfo) );
+	else
+		wsprintf( szPort, "COM%d", PORT(m_SerialData.TTYInfo) );
+
     COMDEV( m_SerialData.TTYInfo ) = CreateFile( szPort,  
                                       GENERIC_READ | GENERIC_WRITE, 
                                       0, 
@@ -783,6 +823,48 @@ BOOL CSerialCommAppApp::UpdateConnection(void)
 	return TRUE;
 }
 
+void CSerialCommAppApp::CheckModemStatus(bool bUpdateNow)
+{
+    __declspec(thread) static DWORD dwOldStatus = 0;
+
+    DWORD dwNewModemStatus;
+
+    if (!GetCommModemStatus(COMDEV(m_SerialData.TTYInfo), &dwNewModemStatus))
+		ErrorReporter( __LINE__ );
+
+    if ( bUpdateNow || (dwNewModemStatus != dwOldStatus) )
+	{
+        dwOldStatus = dwNewModemStatus;
+    }
+}
+
+void CSerialCommAppApp::CheckComStat(bool bUpdateNow)
+{
+    COMSTAT ComStatNew;
+    DWORD dwErrors;
+
+    __declspec(thread) static COMSTAT ComStatOld = {0};
+    __declspec(thread) static DWORD dwErrorsOld = 0;
+
+    BOOL bReport = bUpdateNow;
+    if ( !ClearCommError(COMDEV(m_SerialData.TTYInfo), &dwErrors, &ComStatNew) )
+		ErrorReporter( __LINE__ );
+
+    if ( dwErrors != dwErrorsOld )
+	{
+        bReport = TRUE;
+        dwErrorsOld = dwErrors;
+    }
+
+    if ( memcmp(&ComStatOld, &ComStatNew, sizeof(COMSTAT)) )
+	{
+        bReport = TRUE;
+        ComStatOld = ComStatNew;
+    }
+    
+    ComStatOld = ComStatNew;
+}
+
 BOOL CSerialCommAppApp::BreakDownCommPort(void)
 {
     if ( !CONNECTED(m_SerialData.TTYInfo) )
@@ -853,7 +935,7 @@ void CSerialCommAppApp::WriterGeneric(char* lpBuf, DWORD dwToWrite)
     DWORD dwWritten;
     DWORD dwRes;
 
-	LPFNNOTIFY Notify = (LPFNNOTIFY)LPFNNOTIFY( m_SerialData.TTYInfo );
+	LPFNNOTIFY Notify = FNNOTIFY( m_SerialData.TTYInfo );
 
     if ( NOWRITING(m_SerialData.TTYInfo) )
         return ;
@@ -881,16 +963,20 @@ void CSerialCommAppApp::WriterGeneric(char* lpBuf, DWORD dwToWrite)
 				if ( !GetOverlappedResult(COMDEV(m_SerialData.TTYInfo), &osWrite, &dwWritten, FALSE) )
 				{
 					if ( GetLastError() == ERROR_OPERATION_ABORTED )
-						Notify( NOTIFY_OPERATION_ABORTED );
+						if ( Notify != NULL ) Notify( NOTIFY_OPERATION_ABORTED );
 					else
 						ErrorReporter( __LINE__ );
+
+					SetEvent( ghStatusMessageEvent );
 
 					if ( dwWritten != dwToWrite )
 					{
 						if ( (GetLastError() == ERROR_SUCCESS) && SHOWTIMEOUTS(m_SerialData.TTYInfo) )
-							Notify( NOTIFY_OPERATION_TIMEOUT );
+							if ( Notify != NULL ) Notify( NOTIFY_OPERATION_TIMEOUT );
 						else
 							ErrorReporter( __LINE__ );
+
+						SetEvent( ghStatusMessageEvent );
 					}
 				}
 				break;
@@ -915,10 +1001,29 @@ void CSerialCommAppApp::WriterGeneric(char* lpBuf, DWORD dwToWrite)
 	else
 	{
 		if ( dwWritten != dwToWrite )
-			Notify( NOTIFY_OPERATION_TIMEOUT );
+			if ( Notify != NULL ) Notify( NOTIFY_OPERATION_TIMEOUT );
+
+		SetEvent( ghStatusMessageEvent );
 	}
 
 	CloseHandle( osWrite.hEvent );
+}
+
+void CSerialCommAppApp::ReportCommStatus(void)
+{
+    COMSTAT comStat;
+	DWORD   dwErrors;
+
+	ClearCommError( COMDEV(m_SerialData.TTYInfo), &dwErrors, &comStat );
+}
+
+void CSerialCommAppApp::ReportModemStatus(DWORD dwStatus)
+{
+	LPFNMODEMSTS ModemStatus = FNMODEMSTS( m_SerialData.TTYInfo );
+	if ( ModemStatus != NULL )
+		ModemStatus( dwStatus );
+
+	CheckModemStatus( FALSE );
 }
 
 PWRITEREQUEST CSerialCommAppApp::RemoveFromLinkedList(PWRITEREQUEST pNode)
@@ -1068,8 +1173,8 @@ void CSerialCommAppApp::AddToFrontOfLinkedList(PWRITEREQUEST pNode)
 //----------------------------------------------------------------------------
 SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, LPSERIALDATA pSerialData )
 {
-	if ( pSerialData == NULL )
-		return NULL;
+	//if ( pSerialData == NULL )
+	//	return NULL;
 
 	if ( TTYCommMode == TTY_COMM_INIT )
 	{
@@ -1077,8 +1182,9 @@ SERIALCOMM_API HANDLE WINAPI serialOpenComm( BOOL TTYCommMode, LPSERIALDATA pSer
 		return &theApp;
 	}
 
-	LPFNCALLBACK( theApp.m_SerialData.TTYInfo )		= LPFNCALLBACK( pSerialData->TTYInfo );
-	LPFNNOTIFY( theApp.m_SerialData.TTYInfo)		= LPFNNOTIFY( pSerialData->TTYInfo );
+	FNCALLBACK( theApp.m_SerialData.TTYInfo )		= FNCALLBACK( pSerialData->TTYInfo );
+	FNNOTIFY( theApp.m_SerialData.TTYInfo)			= FNNOTIFY( pSerialData->TTYInfo );
+	FNMODEMSTS( theApp.m_SerialData.TTYInfo)		= FNMODEMSTS( pSerialData->TTYInfo );
 
 	PORT( theApp.m_SerialData.TTYInfo )				= PORT( pSerialData->TTYInfo );
 	BAUDRATE( theApp.m_SerialData.TTYInfo )			= BAUDRATE( pSerialData->TTYInfo );

@@ -49,4 +49,8 @@ public:
 	BOOL WriterAddNewNodeTimeout(DWORD dwRequestType, DWORD dwSize, char ch, char* lpBuf, HANDLE hHeap, DWORD dwTimeout);
 	void AddToFrontOfLinkedList(PWRITEREQUEST pNode);
 	void TransferTextStart(PWRITEREQUEST pWriteComm);
+	void ReportCommStatus(void);
+	void ReportModemStatus(DWORD dwStatus);
+	void CheckModemStatus(bool bUpdateNow);
+	void CheckComStat(bool bUpdateNow);
 };

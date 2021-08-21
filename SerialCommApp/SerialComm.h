@@ -24,6 +24,7 @@ using namespace std;
 //
 typedef void (CALLBACK* LPFNRECEPTION)(HANDLE hCommPort, char* lpData, DWORD dwBufLen);
 typedef void (CALLBACK* LPFNNOTIFY)(DWORD dwNotify);
+typedef void (CALLBACK* LPFNMODEMSTS)(DWORD dwStatus);
 
 //
 //
@@ -182,8 +183,9 @@ typedef struct _TTYInfoStruct
 	int		yChar;
 	int		nCharPos;
 
-	LPVOID	lpfnCallBack;
-	LPVOID	lpfnNotify;
+	LPFNRECEPTION	lpfnCallBack;
+	LPFNNOTIFY		lpfnNotify;
+	LPFNMODEMSTS	lpfnModemSts;
 
 } TTYInfoStruct;
 
@@ -226,8 +228,9 @@ typedef struct _TTYInfoStruct
 #define FLAGCHAR( x )       (x.chFlag)
 #define SCREENCHAR( x, col, row )   (x.Screen[row * MAXCOLS + col])
 
-#define LPFNCALLBACK( x )	(x.lpfnCallBack)
-#define LPFNNOTIFY( x )		(x.lpfnNotify)
+#define FNCALLBACK( x )		(x.lpfnCallBack)
+#define FNNOTIFY( x )		(x.lpfnNotify)
+#define FNMODEMSTS( x )		(x.lpfnModemSts)
 
 #define DTRCONTROL( x )     (x.fDtrControl)
 #define RTSCONTROL( x )     (x.fRtsControl)
@@ -268,8 +271,8 @@ struct WRITEREQUEST *gpWriterTail;
 typedef struct _SERIAL_DATA
 {
 	TTYInfoStruct	TTYInfo;
-	LPFNRECEPTION	lpfnCallBack;
-	LPFNNOTIFY		lpfnNotify;
+	//LPFNRECEPTION	lpfnCallBack;
+	//LPFNNOTIFY		lpfnNotify;
 	WRITEREQUEST	WriteData;
 } SERIALDATA, *LPSERIALDATA;
 
